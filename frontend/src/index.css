@@ -1,0 +1,224 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.ant-layout-sider-trigger {
+  border-top: 1px solid var(--sider-trigger-border, rgba(255, 255, 255, 0.15));
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* ── 全局动画 ────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.3s ease-out;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* ── 页面过渡 ───────────────────────────── */
+.page-enter {
+  animation: slideInUp 0.3s ease-out;
+}
+
+/* ── 悬停效果 ────────────────────────────── */
+.hover-lift {
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+/* ── 滚动条样式 ──────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ── 选择颜色 ────────────────────────────── */
+::selection {
+  background: rgba(99, 102, 241, 0.6);
+  color: white;
+}
+
+.log-panel::selection,
+.log-panel *::selection {
+  background: rgba(99, 102, 241, 0.35);
+  color: inherit;
+}
+
+/* ── 收起任务窗浮动卡片动画 ──────────────── */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 步骤进度动画 ────────────────────────── */
+@keyframes stepFadeIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.step-item {
+  animation: stepFadeIn .35s ease-out both;
+}
+
+.step-item:nth-child(1) { animation-delay: 0s; }
+.step-item:nth-child(2) { animation-delay: .04s; }
+.step-item:nth-child(3) { animation-delay: .08s; }
+.step-item:nth-child(4) { animation-delay: .12s; }
+.step-item:nth-child(5) { animation-delay: .16s; }
+.step-item:nth-child(6) { animation-delay: .20s; }
+.step-item:nth-child(7) { animation-delay: .24s; }
+
+/* ── 步骤完成时的缩放弹跳 ────────────────── */
+@keyframes stepDone {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.step-icon-done {
+  animation: stepDone .4s ease-out;
+}
+
+/* ── 脉冲指示器（running 步骤）──────────── */
+@keyframes stepPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, .4); }
+  50%      { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+}
+
+.step-icon-running {
+  animation: stepPulse 2s ease-in-out infinite;
+  border-radius: 50%;
+}
+
+/* ── 终态横幅入场 ────────────────────────── */
+@keyframes bannerIn {
+  from { opacity: 0; transform: scale(.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.status-banner {
+  animation: bannerIn .4s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── 按钮渐变悬停 ────────────────────────── */
+.btn-gradient {
+  transition: all .25s cubic-bezier(.4,0,.2,1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-gradient:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+}
+
+.btn-gradient:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* ── 浮动任务卡片悬停 ───────────────────── */
+.floating-task-card {
+  transition: all .3s cubic-bezier(.4,0,.2,1);
+  animation: slideUp .3s ease-out;
+}
+
+.floating-task-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0,0,0,.15), 0 4px 12px rgba(0,0,0,.1);
+}
+
+/* ── 暗色面板内 Collapse 样式修正 ──────── */
+.dark-collapse .ant-collapse-header {
+  color: #64748b !important;
+  padding: 8px 0 !important;
+}
+
+.dark-collapse .ant-collapse-expand-icon {
+  color: #64748b !important;
+}
+
+.dark-collapse .ant-collapse-content {
+  background: transparent !important;
+  border-top: none !important;
+}
+
+.dark-collapse .ant-collapse-content-box {
+  padding: 4px 0 0 !important;
+}
