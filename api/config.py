@@ -60,6 +60,7 @@ CONFIG_KEYS = [
     "smsbower_provider_ids",
     "smsbower_except_provider_ids",
     "smsbower_phone_attempts",
+    "smsbower_add_phone_send_attempts",
     "smsbower_otp_timeout_seconds",
     "smsbower_code_attempts",
     "fraud_guard_proxy_rotations",
@@ -178,6 +179,8 @@ def get_config():
         all_cfg["smsbower_country"] = "78,10,6,22,73,16,187,52,12"
     if not all_cfg.get("smsbower_phone_attempts"):
         all_cfg["smsbower_phone_attempts"] = "12"
+    if not all_cfg.get("smsbower_add_phone_send_attempts"):
+        all_cfg["smsbower_add_phone_send_attempts"] = "8"
     if not all_cfg.get("smsbower_otp_timeout_seconds"):
         all_cfg["smsbower_otp_timeout_seconds"] = "120"
     if not all_cfg.get("smsbower_code_attempts"):

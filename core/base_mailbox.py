@@ -1897,10 +1897,28 @@ class CFWorkerMailbox(BaseMailbox):
         otp_cutoff = float(otp_sent_at) - 2 if otp_sent_at else None
         otp_skew_grace_seconds = 30
 
+        def sort_key(mail: dict) -> tuple[float, int]:
+            created_at = str(mail.get("created_at", "") or "").strip()
+            created_ts = float("-inf")
+            if created_at:
+                try:
+                    created_ts = (
+                        datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+                        .replace(tzinfo=timezone.utc)
+                        .timestamp()
+                    )
+                except Exception:
+                    created_ts = float("-inf")
+            try:
+                mail_id = int(mail.get("id", 0) or 0)
+            except (TypeError, ValueError):
+                mail_id = 0
+            return (created_ts, mail_id)
+
         def poll_once() -> Optional[str]:
             try:
                 mails = self._get_mails(account.email)
-                for mail in sorted(mails, key=lambda x: x.get("id", 0), reverse=True):
+                for mail in sorted(mails, key=sort_key, reverse=True):
                     mid = str(mail.get("id", ""))
                     if not mid or mid in seen:
                         continue
@@ -2352,48 +2370,14 @@ class LuckMailMailbox(BaseMailbox):
             extra=extra,
         )
 
-    def _find_reusable_purchase(self) -> Optional[MailboxAccount]:
-        try:
-            purchases = self._client.user.get_purchases(
-                page=1,
-                page_size=100,
-                user_disabled=0,
-            )
-        except Exception as e:
-            self._log(f"[LuckMail] failed to load reusable purchases: {e}")
-            return None
-
-        purchase_list = getattr(purchases, "list", None)
-        if not isinstance(purchase_list, list):
-            return None
-
-        for raw_item in purchase_list:
-            item = self._normalize_purchase_item(raw_item)
-            email = str(item.get("email_address") or "").strip()
-            token = str(item.get("token") or "").strip()
-            if not email or not token:
-                continue
-
-            usable, reason = self._check_purchased_mailbox_usable(email, token)
-            if not usable:
-                self._log(f"[LuckMail] existing purchased mailbox unusable: {email} ({reason})")
-                self._disable_unusable_purchase(item, reason)
-                continue
-
-            self._log(f"[LuckMail] reusing purchased mailbox: {email}")
-            if item.get("warranty_until"):
-                self._log(f"[LuckMail] warranty_until: {item.get('warranty_until')}")
-            return self._build_purchase_account(item, email, token)
-        return None
-
     def get_email(self) -> MailboxAccount:
         if not self._project_code:
-            raise RuntimeError("LuckMail 未设置 project_code，无法创建邮箱")
+            raise RuntimeError("LuckMail project_code is required before creating a mailbox")
 
         if self._use_purchase_mode():
-            reused_account = self._find_reusable_purchase()
-            if reused_account is not None:
-                return reused_account
+            self._token = None
+            self._email = None
+            self._purchase_id = None
 
             last_error = ""
             max_purchase_attempts = 3
@@ -2435,44 +2419,6 @@ class LuckMailMailbox(BaseMailbox):
 
             raise RuntimeError(
                 f"LuckMail failed to buy usable LuckMail mailbox after {max_purchase_attempts} attempts: {last_error}"
-            )
-            self._log(
-                f"[LuckMail] 分支: ChatGPT + LuckMail -> 购买邮箱接口 "
-                f"(project_code={self._project_code}, email_type={self._email_type or '-'}, domain={self._domain or '-'})"
-            )
-            try:
-                result = self._client.user.purchase_emails(
-                    project_code=self._project_code,
-                    quantity=1,
-                    email_type=self._email_type,
-                    domain=self._domain,
-                )
-            except Exception as e:
-                raise RuntimeError(f"LuckMail 购买邮箱失败: {e}") from e
-
-            purchases = (result or {}).get("purchases") or []
-            if not purchases:
-                raise RuntimeError(f"LuckMail 购买邮箱返回为空: {result}")
-
-            item = purchases[0]
-            email = str(item.get("email_address") or "").strip()
-            token = str(item.get("token") or "").strip()
-            if not email or not token:
-                raise RuntimeError(f"LuckMail 返回缺少 email/token: {item}")
-
-            self._email = email
-            self._token = token
-            self._log(f"[LuckMail] 已购邮箱: {email}")
-            if item.get("warranty_until"):
-                self._log(f"[LuckMail] 质保到期: {item.get('warranty_until')}")
-            return MailboxAccount(
-                email=email,
-                account_id=token,
-                extra={
-                    "provider": "luckmail",
-                    "token": token,
-                    "project_code": self._project_code,
-                },
             )
 
         self._log(

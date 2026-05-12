@@ -288,6 +288,7 @@ const TAB_ITEMS = [
           { key: 'smsbower_max_price', label: '最高单价（美元）', placeholder: '例如 0.09；买不到号时调高' },
           { key: 'smsbower_min_price', label: '最低单价（美元，可选）', placeholder: '通常留空' },
           { key: 'smsbower_phone_attempts', label: '每国最多取号次数', placeholder: '默认 12' },
+          { key: 'smsbower_add_phone_send_attempts', label: 'add-phone ??????', placeholder: '?? 8' },
           { key: 'smsbower_otp_timeout_seconds', label: '短信等待秒数', placeholder: '默认 120' },
           { key: 'smsbower_code_attempts', label: '验证码提交/重发次数', placeholder: '默认 2' },
           { key: 'fraud_guard_proxy_rotations', label: 'fraud_guard 换代理次数', placeholder: '默认 3' },

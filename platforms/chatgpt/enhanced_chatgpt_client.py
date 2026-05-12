@@ -461,6 +461,7 @@ class EnhancedChatGPTClient:
         register_submitted = False
         otp_verified = False
         account_created = False
+        otp_send_attempted = False
         seen_states = {}
         
         for step in range(12):
@@ -487,6 +488,7 @@ class EnhancedChatGPTClient:
                     return False, f"注册失败: {msg}"
                 
                 register_submitted = True
+                otp_send_attempted = True
                 
                 if not self.send_email_otp_enhanced():
                     self._log("发送验证码接口返回失败，继续等待邮箱中的验证码...")
@@ -498,6 +500,11 @@ class EnhancedChatGPTClient:
             
             # 邮箱验证码阶段
             if self.base_client._state_is_email_otp(state):
+                if not otp_send_attempted:
+                    otp_send_attempted = True
+                    self._log("email-verification 起点已存在有效会话，先主动发送验证码（增强版）...")
+                    if not self.send_email_otp_enhanced():
+                        self._log("主动发送验证码失败，继续等待邮箱中的现有验证码...")
                 self._log("等待邮箱验证码（增强版）...")
                 
                 # 等待验证码（模拟用户查看邮箱的行为）

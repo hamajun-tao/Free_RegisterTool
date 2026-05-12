@@ -44,6 +44,17 @@ function pickLatestActiveTask(tasks: RegisterTask[]) {
     (item) => item && !isTaskFinished(item),
   )
   if (activeTasks.length === 0) return null
+
+  const pickByTaskId = [...activeTasks].sort((a, b) => {
+    const aId = String(a?.task_id || a?.id || '')
+    const bId = String(b?.task_id || b?.id || '')
+    return bId.localeCompare(aId, undefined, { numeric: true })
+  })[0]
+
+  if (pickByTaskId?.task_id || pickByTaskId?.id) {
+    return pickByTaskId
+  }
+
   return activeTasks.sort((a, b) => {
     const aValue = Number(
       a?.updated_at || a?.finished_at || a?.started_at || a?.created_at || 0,
@@ -93,6 +104,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
   const eventSourceRef = useRef<EventSource | null>(null)
   const subscribedIdRef = useRef('')
   const cashierShownRef = useRef<Set<string>>(new Set())
+  const restoreGenerationRef = useRef(0)
 
   const closeStreams = useCallback(() => {
     if (eventSourceRef.current) {
@@ -242,6 +254,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
+    const generation = ++restoreGenerationRef.current
     const dismissedId = readLocalStorage(DISMISSED_TASK_KEY)
     const activeId = readLocalStorage(ACTIVE_TASK_KEY)
 
@@ -249,13 +262,12 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
       ;(async () => {
         try {
           const t: RegisterTask = await apiFetch(`/tasks/${activeId}?include_logs=0`)
-          if (cancelled) return
+          if (cancelled || restoreGenerationRef.current !== generation) return
           if (isTaskFinished(t)) {
             writeLocalStorage(ACTIVE_TASK_KEY, '')
             if (dismissedId && dismissedId === activeId) {
               writeLocalStorage(DISMISSED_TASK_KEY, '')
             }
-            setTask(t)
             return
           }
           if (dismissedId && dismissedId === activeId) return
@@ -270,7 +282,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
     ;(async () => {
       try {
         const tasks = (await apiFetch('/tasks')) as RegisterTask[]
-        if (cancelled) return
+        if (cancelled || restoreGenerationRef.current !== generation) return
         const latestActiveTask = pickLatestActiveTask(tasks)
         if (!latestActiveTask) return
         const latestActiveTaskId = String(
@@ -296,11 +308,12 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
       closeStreams()
       return
     }
-    if (subscribedIdRef.current) {
-      subscribe(subscribedIdRef.current)
-    } else if (task && (task.id || task.task_id)) {
-      subscribe(String(task.task_id || task.id))
+    const targetId = String(task?.task_id || task?.id || '').trim()
+    if (!targetId) return
+    if (subscribedIdRef.current === targetId && (eventSourceRef.current || fallbackTimerRef.current)) {
+      return
     }
+    subscribe(targetId)
   }, [paused, closeStreams, subscribe, task])
 
   useEffect(() => {

@@ -86,6 +86,7 @@ export default function RegisterTaskPage() {
         smsbower_min_price: cfg.smsbower_min_price || '',
         smsbower_price_steps: cfg.smsbower_price_steps || '',
         smsbower_phone_attempts: cfg.smsbower_phone_attempts || '',
+        smsbower_add_phone_send_attempts: cfg.smsbower_add_phone_send_attempts || '',
         smsbower_otp_timeout_seconds: cfg.smsbower_otp_timeout_seconds || '',
         smsbower_code_attempts: cfg.smsbower_code_attempts || '',
         fraud_guard_proxy_rotations: cfg.fraud_guard_proxy_rotations || '',
@@ -158,6 +159,7 @@ export default function RegisterTaskPage() {
       smsbower_min_price: values.smsbower_min_price,
       smsbower_price_steps: values.smsbower_price_steps,
       smsbower_phone_attempts: values.smsbower_phone_attempts,
+      smsbower_add_phone_send_attempts: values.smsbower_add_phone_send_attempts,
       smsbower_otp_timeout_seconds: values.smsbower_otp_timeout_seconds,
       smsbower_code_attempts: values.smsbower_code_attempts,
       fraud_guard_proxy_rotations: values.fraud_guard_proxy_rotations,
@@ -555,6 +557,9 @@ export default function RegisterTaskPage() {
             <Space style={{ width: '100%' }}>
               <Form.Item name="smsbower_phone_attempts" label="每国取号次数" style={{ flex: 1 }}>
                 <Input placeholder="默认 12" />
+              </Form.Item>
+              <Form.Item name="smsbower_add_phone_send_attempts" label="add-phone ????" style={{ flex: 1 }}>
+                <Input placeholder="?? 8" />
               </Form.Item>
               <Form.Item name="smsbower_otp_timeout_seconds" label="短信等待秒数" style={{ flex: 1 }}>
                 <Input placeholder="默认 120" />

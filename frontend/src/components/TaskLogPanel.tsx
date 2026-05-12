@@ -280,11 +280,11 @@ const WorkerCard = memo(
           <span style={{ color: meta.color, fontSize: 12, fontWeight: 700 }}>{meta.label}</span>
         </div>
         <div style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.7 }}>
-          <div>{worker.email || '未分配账号'}</div>
-          <div>阶段: {worker.stage || 'pending'}</div>
-          {worker.provider ? <div>邮箱: {worker.provider}</div> : null}
-          {worker.proxy ? <div>代理: {worker.proxy}</div> : null}
-          {worker.message ? <div>说明: {worker.message}</div> : null}
+          <div>{String(worker.email || '未分配账号').trim()}</div>
+          <div>阶段: {String(worker.stage || 'pending').trim()}</div>
+          {worker.provider ? <div>邮箱: {String(worker.provider).trim()}</div> : null}
+          {worker.proxy ? <div>代理: {String(worker.proxy).trim()}</div> : null}
+          {worker.message ? <div>说明: {String(worker.message).trim()}</div> : null}
         </div>
       </div>
     )

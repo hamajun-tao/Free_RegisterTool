@@ -28,6 +28,8 @@ export default function RunningTaskBadge() {
   const isFinished = status === 'done' || status === 'failed' || status === 'stopped'
   const isOnTaskPage = location.pathname === '/register-task'
 
+  if (isOnTaskPage) return null
+
   const statusColor =
     status === 'done'
       ? 'success'

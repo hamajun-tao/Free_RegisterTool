@@ -107,9 +107,14 @@ function parseExtraJson(raw: string | undefined) {
 }
 
 function normalizeAccount(account: any) {
+  const email = String(account.email || '').trim()
+  const password = String(account.password || '').trim()
+  
   if (!account.extra_json) {
     return {
       ...account,
+      email,
+      password,
       extra: {},
       sub2apiSync: account.sub2api_sync || {},
       chatgptLocal: account.chatgpt_local || {},
@@ -131,7 +136,7 @@ function normalizeAccount(account: any) {
   const autoPayDiag = extra.auto_pay_diagnostic_code || ''
   const autoPayPlan = extra.auto_pay_plan || ''
   const autoPayProvider = extra.auto_pay_provider || ''
-  return { ...account, extra, sub2apiSync, chatgptLocal, effectiveStatus, invalidReason, autoPayState, autoPayDiag, autoPayPlan, autoPayProvider }
+  return { ...account, email, password, extra, sub2apiSync, chatgptLocal, effectiveStatus, invalidReason, autoPayState, autoPayDiag, autoPayPlan, autoPayProvider }
 }
 
 function parseApiDate(value?: string) {
@@ -791,7 +796,7 @@ export default function Accounts() {
   const getRefreshToken = (record: any): string => {
     try {
       const extra = JSON.parse(record.extra_json || '{}')
-      return extra.refresh_token || ''
+      return String(extra.refresh_token || '').trim()
     } catch {
       return ''
     }
@@ -1004,6 +1009,7 @@ export default function Accounts() {
         smsbower_min_price: cfg.smsbower_min_price,
         smsbower_price_steps: cfg.smsbower_price_steps,
         smsbower_phone_attempts: cfg.smsbower_phone_attempts,
+        smsbower_add_phone_send_attempts: cfg.smsbower_add_phone_send_attempts,
         smsbower_otp_timeout_seconds: cfg.smsbower_otp_timeout_seconds,
         smsbower_code_attempts: cfg.smsbower_code_attempts,
         smsbower_provider_ids: cfg.smsbower_provider_ids,
@@ -1021,6 +1027,7 @@ export default function Accounts() {
         ...(values.cfworker_custom_auth ? { cfworker_custom_auth: values.cfworker_custom_auth } : {}),
         ...(values.luckmail_base_url ? { luckmail_base_url: values.luckmail_base_url } : {}),
         ...(values.luckmail_api_key ? { luckmail_api_key: values.luckmail_api_key } : {}),
+        ...(values.smsbower_add_phone_send_attempts ? { smsbower_add_phone_send_attempts: values.smsbower_add_phone_send_attempts } : {}),
       }
       const chatgptRegistrationRequestAdapter =
         buildChatGPTRegistrationRequestAdapter(
@@ -1239,7 +1246,7 @@ export default function Accounts() {
 
   const isChatgptPlatform = currentPlatform === 'chatgpt'
   const monospaceStyle: React.CSSProperties = {
-    fontFamily: 'SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+    fontFamily: 'Consolas, Monaco, "Courier New", monospace',
     fontSize: 12,
   }
   const secondaryTextStyle: React.CSSProperties = {
@@ -1254,12 +1261,13 @@ export default function Accounts() {
   }
   const secretPreviewStyle: React.CSSProperties = {
     ...monospaceStyle,
-    filter: 'blur(4px)',
+    filter: 'blur(3.5px)',
+    userSelect: 'none',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     maxWidth: '100%',
-    opacity: 0.9,
+    opacity: 0.8,
   }
   const compactPanelStyle: React.CSSProperties = {
     padding: '8px 10px',
@@ -1538,8 +1546,8 @@ export default function Accounts() {
             style={{ width: 140 }}
             onChange={setFilterStatus}
             options={[
-              { value: 'group:success', label: '🟢 正常账号' },
-              { value: 'group:failed', label: '🔴 全部失效' },
+              { value: 'group:success', label: '正常账号' },
+              { value: 'group:failed', label: '全部失效' },
               { value: 'registered', label: '已注册' },
               { value: 'trial', label: '试用中' },
               { value: 'subscribed', label: '已订阅' },
@@ -1873,6 +1881,11 @@ export default function Accounts() {
             <Form.Item name="register_delay_seconds" label="每个注册延迟(秒)">
               <InputNumber min={0} precision={1} step={0.5} style={{ width: '100%' }} placeholder="0 = 不延迟" />
             </Form.Item>
+            {currentPlatform === 'chatgpt' && (
+              <Form.Item name="smsbower_add_phone_send_attempts" label="add-phone ????">
+                <Input placeholder="???????? / 8" />
+              </Form.Item>
+            )}
             <Form.Item name="mail_provider" label="邮箱服务" rules={[{ required: true }]}>
               <Select
                 options={[

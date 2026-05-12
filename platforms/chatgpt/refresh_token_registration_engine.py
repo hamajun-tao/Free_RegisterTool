@@ -2934,10 +2934,16 @@ class RefreshTokenRegistrationEngine:
             # 若 token_exchange() 返回 False 且 _oauth_blocked_by_phone 为 True 时
             # 说明经过了一轮登录/验证邮箱并走到了 addphone 但是没过去风控
             if getattr(self, "_oauth_blocked_by_phone", False):
-                result.success = True
-                result.error_message = ""
+                result.success = False
+                result.error_message = (
+                    result.error_message
+                    or "OAuth blocked at add-phone step after basic account creation"
+                )
                 result.metadata["oauth_state"] = "blocked_by_phone"
-                self._log("新登录会话的 OAuth 在 add-phone 步骤被阻断，按要求保留基础账号状态并结束不再重试。", "warning")
+                self._log(
+                    "?????? OAuth ? add-phone ??????????????????????????????",
+                    "warning",
+                )
                 return result
 
             result.error_message = result.error_message or "Failed to obtain real OAuth credentials after restart login"

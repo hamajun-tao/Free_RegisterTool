@@ -26,7 +26,6 @@ import Login from '@/pages/Login'
 import { apiFetch, getToken } from '@/lib/utils'
 import { darkTheme, lightTheme } from './theme'
 import { RegisterTaskProvider } from '@/contexts/RegisterTaskContext'
-import RunningTaskBadge from '@/components/RunningTaskBadge'
 
 const { Sider, Content, Header } = Layout
 
@@ -210,18 +209,13 @@ function AppContent() {
               zIndex: 50,
               height: 56,
               padding: '0 24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
               background: isLight
                 ? 'rgba(255,255,255,.85)'
                 : 'rgba(15,23,42,.7)',
               backdropFilter: 'saturate(180%) blur(12px)',
               borderBottom: `1px solid ${currentTheme.token?.colorBorder}`,
             }}
-          >
-            <RunningTaskBadge />
-          </Header>
+          />
           <Content
             style={{
               padding: 24,
