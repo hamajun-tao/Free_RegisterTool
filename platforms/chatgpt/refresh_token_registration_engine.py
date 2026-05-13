@@ -194,6 +194,7 @@ class RefreshTokenRegistrationEngine:
         self._token_acquisition_requires_login: bool = False  # 鏂版敞鍐岃处鍙烽渶瑕佷簩娆＄櫥褰曟嬁 token
         self._post_otp_continue_url: str = ""
         self._post_otp_page_type: str = ""
+        self._relogin_requires_email_otp: bool = True
         self._authorize_sentinel: Optional[str] = None  # authorize_continue sentinel锛屽鐢ㄤ簬鍚庣画姝ラ
         self._register_continue_url: str = ""
         self._browser_frontend_state: Dict[str, Any] = {}
@@ -1265,6 +1266,7 @@ class RefreshTokenRegistrationEngine:
         self._otp_sent_at = None
         self._post_otp_continue_url = ""
         self._post_otp_page_type = ""
+        self._relogin_requires_email_otp = True
         self._register_continue_url = ""
         # 清除浏览器前端状态（cookies/storage），避免被 fraud_guard 标记的旧会话污染
         self._browser_frontend_state = {}
@@ -1272,6 +1274,7 @@ class RefreshTokenRegistrationEngine:
         self._authorization_context_bootstrap_attempted = False
         self._is_existing_account = False
         self._token_acquisition_requires_login = True
+        self._relogin_requires_email_otp = True
         self._about_you_create_account_already_exists_without_consent = False
         # 全新会话重置 fraud_guard 代理轮换计数
         self._fraud_guard_proxy_rotations = 0
@@ -1577,6 +1580,10 @@ class RefreshTokenRegistrationEngine:
 
     def _complete_token_exchange(self, result: RegistrationResult) -> bool:
         """鍦ㄧ櫥褰曟€佸凡寤虹珛鍚庯紝缁х画瀹屾垚 workspace 鍜?OAuth token 鑾峰彇銆?"""
+        if getattr(self, "_post_otp_page_type", "") == "add_phone":
+            self._log("当前流程已直达 add-phone，无需等待登录验证码，直接进入手机验证阶段...")
+            return self._complete_post_otp_flow(result)
+
         self._log("等待登录验证码...")
         code = self._get_verification_code()
         if not code:
@@ -2034,6 +2041,7 @@ class RefreshTokenRegistrationEngine:
     def _restart_login_flow(self) -> Tuple[bool, str]:
         """鏂版敞鍐岃处鍙峰畬鎴愬缓鍙峰悗锛岄噸鏂板彂璧蜂竴娆＄櫥褰曟祦绋嬫嬁 token銆?"""
         self._token_acquisition_requires_login = True
+        self._relogin_requires_email_otp = True
         self._log("注册完成，开始重新登录以获取 Token...")
         self._reset_auth_flow()
 
@@ -2047,6 +2055,8 @@ class RefreshTokenRegistrationEngine:
         if not login_start_result.success:
             return False, f"重新登录提交邮箱失败: {login_start_result.error_message}"
         if login_start_result.page_type == OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]:
+            self._relogin_requires_email_otp = True
+            self._post_otp_page_type = OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]
             self._log("重新登录已直接进入邮箱验证码页面，等待系统发送验证码")
             return True, ""
         if login_start_result.page_type != OPENAI_PAGE_TYPES["LOGIN_PASSWORD"]:
@@ -2056,12 +2066,16 @@ class RefreshTokenRegistrationEngine:
         if not password_result.success:
             return False, f"重新登录提交密码失败: {password_result.error_message}"
         if password_result.is_existing_account:
+            self._relogin_requires_email_otp = True
+            self._post_otp_page_type = OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]
+            self._log("重新登录密码后进入邮箱 OTP，继续等待本轮验证码")
             return True, ""
         # 本账号在 reuse-session 阶段已通过邮箱 OTP，密码登录后 OpenAI 直接跳 add_phone；
         # 这属于正常流程（OTP 无需二次校验），设置 post_otp_page_type 让 _complete_token_exchange
         # 直接接管手机验证，而不是把 add_phone 当作"登录未进入验证码页面"误判为失败。
         password_page_type = str(password_result.page_type or "").lower()
         if password_page_type == "add_phone":
+            self._relogin_requires_email_otp = False
             self._post_otp_page_type = "add_phone"
             self._log("重新登录已跳过邮箱 OTP 直达 add-phone，进入手机验证阶段", "warning")
             return True, ""

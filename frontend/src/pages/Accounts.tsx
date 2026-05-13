@@ -1789,19 +1789,25 @@ export default function Accounts() {
                 onClick={() => setRegisterModalCollapsed(false)}>
                 展开
               </Button>
-              <Popconfirm
-                title="关闭任务窗"
-                description="任务仍在后台运行，关闭后可在任务列表查看。确认关闭？"
-                onConfirm={() => {
-                  setRegisterModalOpen(false); setRegisterModalCollapsed(false); setTaskId(null); setTaskMeta(null); registerForm.resetFields()
-                }}
-                okText="确认关闭"
-                cancelText="取消"
-              >
-                <Button size="small" type="text" style={{ color: '#f87171', fontSize: 12 }}>
+              {isTaskDone ? (
+                <Button size="small" type="text" style={{ color: '#f87171', fontSize: 12 }} onClick={() => { setRegisterModalOpen(false); setRegisterModalCollapsed(false); setTaskId(null); setTaskMeta(null); registerForm.resetFields(); }}>
                   关闭
                 </Button>
-              </Popconfirm>
+              ) : (
+                <Popconfirm
+                  title="关闭任务窗"
+                  description="任务仍在后台运行，关闭后可在后台继续。确认关闭？"
+                  onConfirm={() => {
+                    setRegisterModalOpen(false); setRegisterModalCollapsed(false); setTaskId(null); setTaskMeta(null); registerForm.resetFields()
+                  }}
+                  okText="确认关闭"
+                  cancelText="取消"
+                >
+                  <Button size="small" type="text" style={{ color: '#f87171', fontSize: 12 }}>
+                    关闭
+                  </Button>
+                </Popconfirm>
+              )}
             </Space>
           </div>
 
@@ -1860,12 +1866,15 @@ export default function Accounts() {
 
           {/* 状态文字 */}
           {isTaskDone ? (
-            <div style={{
+            <div 
+              onClick={() => { setRegisterModalOpen(false); setRegisterModalCollapsed(false); setTaskId(null); setTaskMeta(null); registerForm.resetFields(); }}
+              style={{
               marginTop: 10, textAlign: 'center', fontSize: 12, fontWeight: 600, padding: '5px 0', borderRadius: 6,
               color: taskMeta?.status === 'done' ? '#4ade80' : taskMeta?.status === 'failed' ? '#f87171' : '#fbbf24',
               background: taskMeta?.status === 'done' ? 'rgba(34,197,94,.08)' : taskMeta?.status === 'failed' ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)',
+              cursor: 'pointer'
             }}>
-              {taskMeta?.status === 'done' ? '✓ 任务完成' : taskMeta?.status === 'failed' ? '✗ 任务失败' : '■ 已停止'}
+              {taskMeta?.status === 'done' ? '✓ 任务完成 (点击关闭)' : taskMeta?.status === 'failed' ? '✗ 任务失败 (点击关闭)' : '■ 已停止 (点击关闭)'}
             </div>
           ) : (
             <div style={{ marginTop: 10, textAlign: 'center', fontSize: 11, color: '#475569' }}>

@@ -179,7 +179,6 @@ class ChatGPTClient:
         payload = page.get("payload") if isinstance(page.get("payload"), dict) else {}
 
         candidate_keys = (
-            "email_verification_mode",
             "pending_authentication_token",
             "pendingAuthenticationToken",
             "email_verification_id",
@@ -516,7 +515,8 @@ class ChatGPTClient:
                 return False
             if not self._has_cf_clearance_cookie():
                 self._log("Homepage session not ready: cf_clearance=no", "warning")
-                return False
+                # cf_clearance 并非每次首页请求都会下发；后续 authorize 仍可能成功
+                # 这里只做告警，不直接判失败，避免误杀可用代理
             return True
         except Exception as e:
             self._log(f"访问首页失败: {e}")
@@ -844,6 +844,25 @@ class ChatGPTClient:
                 timeout=30,
                 allow_redirects=False,
             )
+
+            if r.status_code == 400:
+                try:
+                    err_data = r.json()
+                except Exception:
+                    err_data = {}
+                err_obj = err_data.get("error") if isinstance(err_data, dict) else {}
+                offending = str((err_obj or {}).get("param") or "").strip()
+                err_code = str((err_obj or {}).get("code") or "").strip()
+                if offending and err_code in {"unknown_parameter", "invalid_request_error"} and offending in payload:
+                    self._log(f"OTP 参数 {offending} 不被接受，移除后重试一次", "warning")
+                    payload.pop(offending, None)
+                    r = self.session.post(
+                        url,
+                        json=payload,
+                        headers=headers,
+                        timeout=30,
+                        allow_redirects=False,
+                    )
 
             if r.status_code == 200:
                 try:

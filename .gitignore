@@ -91,5 +91,21 @@ debug_*.sh
 run_local.*
 local_*
 
+# Local operator helpers kept only on the current machine
+/smstome_tool.py
+/start_backend.bat
+/start_backend.ps1
+/stop_backend.bat
+/stop_backend.ps1
+/test_payment_hook.py
+/test_proxy_rotation.py
+/mm_facetoface_collect_qrcode_*.png
+/_check_config.py
+/_check_config2.py
+/_insert_geo.py
+/_query_account.py
+/manual_login.py
+/add_proxy_nodes.py
+
 # Docker data
 docker/data/
