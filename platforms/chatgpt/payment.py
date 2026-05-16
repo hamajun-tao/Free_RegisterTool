@@ -7,9 +7,10 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 from curl_cffi import requests as cffi_requests
+import requests as http_requests
 from core.proxy_utils import build_requests_proxy_config
 
 # from ..database.models import Account  # removed: external dep
@@ -25,6 +26,7 @@ def _build_proxies(proxy: Optional[str]) -> Optional[dict]:
 
 
 _COUNTRY_CURRENCY_MAP = {
+    "ID": "IDR",
     "SG": "SGD",
     "US": "USD",
     "TR": "TRY",
@@ -38,6 +40,70 @@ _COUNTRY_CURRENCY_MAP = {
     "BR": "BRL",
     "MX": "MXN",
 }
+
+
+def _select_mooizz_checkout_url(payload: dict[str, Any]) -> tuple[str, str]:
+    links = payload.get("links") or {}
+    candidates = [
+        ("stripe_external", str(links.get("stripe_external") or "").strip()),
+        ("link", str(payload.get("link") or "").strip()),
+        ("openai_full", str(links.get("openai_full") or "").strip()),
+        ("chatgpt_verify", str(links.get("chatgpt_verify") or "").strip()),
+    ]
+    for link_type, url in candidates:
+        if url:
+            return url, link_type
+    return "", ""
+
+
+def generate_plus_link_via_mooizz(
+    account: Account,
+    proxy: Optional[str] = None,
+    country: str = "US",
+) -> dict[str, Any]:
+    if not account.access_token:
+        raise ValueError("账号缺少 access_token")
+
+    billing_currency = _COUNTRY_CURRENCY_MAP.get(country, "USD")
+    attempts: list[tuple[str, str]] = []
+    proxy_candidates: list[tuple[str, str]] = []
+    normalized_proxy = str(proxy or "").strip()
+    if normalized_proxy:
+        proxy_candidates.append(("proxy", normalized_proxy))
+    proxy_candidates.append(("direct", ""))
+
+    for mode, proxy_value in proxy_candidates:
+        try:
+            response = http_requests.post(
+                "https://gpt.mooizz.com/api/generate",
+                json={
+                    "token": account.access_token,
+                    "billing_country": country,
+                    "billing_currency": billing_currency,
+                    "proxy": proxy_value,
+                },
+                timeout=45,
+            )
+            payload = response.json()
+            if not response.ok:
+                raise RuntimeError(payload.get("error") or f"HTTP {response.status_code}")
+            url, link_type = _select_mooizz_checkout_url(payload)
+            if not url:
+                raise RuntimeError("mooizz 未返回有效支付链接")
+            return {
+                "url": url,
+                "cashier_url": url,
+                "billing_currency": billing_currency,
+                "source": "mooizz",
+                "mode": mode,
+                "selected_link_type": link_type,
+                "payload": payload,
+            }
+        except Exception as exc:
+            attempts.append((mode, str(exc)))
+
+    attempt_text = "; ".join(f"{mode}: {reason}" for mode, reason in attempts if reason) or "unknown error"
+    raise RuntimeError(f"mooizz 取链失败: {attempt_text}")
 
 
 def _extract_oai_did(cookies_str: str) -> Optional[str]:

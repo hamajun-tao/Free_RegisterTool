@@ -18,12 +18,12 @@ def test_config_api_allows_smsbower_price_steps(monkeypatch):
     assert response["updated"] == ["smsbower_price_steps"]
 
 
-def test_config_api_defaults_sms_country_priority_to_fr_vn_us_last(monkeypatch):
+def test_config_api_defaults_sms_country_priority_to_vn_first(monkeypatch):
     monkeypatch.setattr("api.config.config_store.get_all", lambda: {})
 
     response = get_config()
 
-    assert response["smsbower_country"] == "78,10,6,22,73,16,187,52,12"
+    assert response["smsbower_country"] == "10,6,22,73,187,52,12,78"
     assert response["smstome_country_slugs"] == "united-states"
 
 
@@ -166,3 +166,71 @@ def test_config_api_defaults_new_payment_keys(monkeypatch):
     assert response["payment_promo_proxy_geo"] == "JP"
     assert response["payment_gopay_otp_retries"] == "2"
     assert response["payment_android_headless"] == "1"
+
+
+def test_config_api_allows_duckduckgo_keys(monkeypatch):
+    saved = {}
+
+    def fake_set_many(data):
+        saved.update(data)
+
+    monkeypatch.setattr("api.config.config_store.set_many", fake_set_many)
+
+    response = update_config(
+        ConfigUpdate(
+            data={
+                "duckduckgo_email": "wjwago@duck.com",
+                "duckduckgo_gmail_address": "ago950523@gmail.com",
+                "duckduckgo_gmail_app_password": "secret",
+                "duckduckgo_imap_host": "imap.gmail.com",
+                "duckduckgo_imap_port": "993",
+                "duckduckgo_mailbox": "INBOX",
+                "duckduckgo_all_mailbox": "[Gmail]/All Mail",
+                "duckduckgo_gmail_api_mode": "gmail_api",
+                "duckduckgo_gmail_api_credentials": '{"installed": {}}',
+                "duckduckgo_gmail_api_token": '{"refresh_token": "token"}',
+                "duckduckgo_api_token": "duck-token",
+            }
+        )
+    )
+
+    expected_keys = {
+        "duckduckgo_email",
+        "duckduckgo_gmail_address",
+        "duckduckgo_gmail_app_password",
+        "duckduckgo_imap_host",
+        "duckduckgo_imap_port",
+        "duckduckgo_mailbox",
+        "duckduckgo_all_mailbox",
+        "duckduckgo_gmail_api_mode",
+        "duckduckgo_gmail_api_credentials",
+        "duckduckgo_gmail_api_token",
+        "duckduckgo_api_token",
+    }
+    assert expected_keys.issubset(set(CONFIG_KEYS))
+    assert saved == {
+        "duckduckgo_email": "wjwago@duck.com",
+        "duckduckgo_gmail_address": "ago950523@gmail.com",
+        "duckduckgo_gmail_app_password": "secret",
+        "duckduckgo_imap_host": "imap.gmail.com",
+        "duckduckgo_imap_port": "993",
+        "duckduckgo_mailbox": "INBOX",
+        "duckduckgo_all_mailbox": "[Gmail]/All Mail",
+        "duckduckgo_gmail_api_mode": "gmail_api",
+        "duckduckgo_gmail_api_credentials": '{"installed": {}}',
+        "duckduckgo_gmail_api_token": '{"refresh_token": "token"}',
+        "duckduckgo_api_token": "duck-token",
+    }
+    assert response["updated"] == list(saved.keys())
+
+
+def test_config_api_defaults_duckduckgo_imap_values(monkeypatch):
+    monkeypatch.setattr("api.config.config_store.get_all", lambda: {})
+
+    response = get_config()
+
+    assert response["duckduckgo_imap_host"] == "imap.gmail.com"
+    assert response["duckduckgo_imap_port"] == "993"
+    assert response["duckduckgo_mailbox"] == "INBOX"
+    assert response["duckduckgo_all_mailbox"] == "[Gmail]/All Mail"
+    assert response["duckduckgo_gmail_api_mode"] == "imap"

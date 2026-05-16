@@ -1,8 +1,7 @@
-﻿"""ChatGPT / Codex CLI 骞冲彴鎻掍欢"""
+﻿"""ChatGPT / Codex CLI platform plugin."""
 
 import random
 import string
-
 from core.base_mailbox import BaseMailbox
 from core.base_platform import Account, BasePlatform, RegisterConfig
 from core.registry import register
@@ -43,7 +42,7 @@ class ChatGPTPlatform(BasePlatform):
             password = "".join(random.choices(string.ascii_letters + string.digits + "!@#$", k=16))
 
         proxy = self.config.proxy if self.config else None
-        browser_mode = (self.config.executor_type if self.config else None) or "protocol"
+        browser_mode = (self.config.executor_type if self.config else None) or "headless"
         extra_config = (self.config.extra or {}) if self.config and getattr(self.config, "extra", None) else {}
         log_fn = getattr(self, "_log_fn", print)
         max_retries = 3
@@ -96,7 +95,7 @@ class ChatGPTPlatform(BasePlatform):
                     exclude_codes=None,
                 ):
                     if not self._acct:
-                        raise RuntimeError("閭璐︽埛灏氭湭鍒涘缓锛屾棤娉曡幏鍙栭獙璇佺爜")
+                        raise RuntimeError("Mailbox not yet created, cannot get verification code")
                     return _mailbox.wait_for_code(
                         self._acct,
                         keyword="",
@@ -176,11 +175,11 @@ class ChatGPTPlatform(BasePlatform):
             max_retries=max_retries,
             extra_config=extra_config,
             task_control=getattr(self, "_task_control", None),
-            pre_oauth_auto_pay_hook=extra_config.get("_chatgpt_pre_oauth_auto_pay_hook"),
+            pre_oauth_auto_pay_hook=None,
         )
         result = adapter.run(context)
         if not result or not result.success:
-            error_message = result.error_message if result else "娉ㄥ唽澶辫触"
+            error_message = result.error_message if result else "Registration failed"
             try:
                 context.email_service.update_status(False, error_message)
             except Exception:
@@ -201,10 +200,9 @@ class ChatGPTPlatform(BasePlatform):
             {"id": "refresh_token", "label": "刷新 Token", "params": []},
             {
                 "id": "payment_link",
-                "label": "生成支付链接",
+                "label": "获取 Plus 长链",
                 "params": [
-                    {"key": "country", "label": "地区", "type": "select", "options": ["US", "SG", "TR", "HK", "JP", "GB", "AU", "CA"]},
-                    {"key": "plan", "label": "套餐", "type": "select", "options": ["plus", "team"]},
+                    {"key": "country", "label": "地区", "type": "select", "options": ["ID", "US", "SG", "TR", "HK", "JP", "GB", "AU", "CA"]},
                 ],
             },
             {
@@ -238,29 +236,6 @@ class ChatGPTPlatform(BasePlatform):
                     {"key": "api_url", "label": "API URL", "type": "text"},
                     {"key": "api_key", "label": "Admin Key", "type": "text"},
                 ],
-            },
-            {
-                "id": "upload_contribution",
-                "label": "上传 Contribution",
-                "params": [
-                    {"key": "api_url", "label": "Contribution API URL", "type": "text"},
-                    {"key": "api_key", "label": "Public Key", "type": "text"},
-                ],
-            },
-            {
-                "id": "auto_pay",
-                "label": "自动支付 Plus",
-                "params": [
-                    {"key": "plan", "label": "套餐", "type": "select", "options": ["plus", "team"]},
-                    {"key": "provider", "label": "Provider", "type": "select", "options": [
-                        "paypal_web", "gopay_api", "gopay_android", "card", "manual_link",
-                    ]},
-                ],
-            },
-            {
-                "id": "android_experiment",
-                "label": "GoPay 模拟机实验",
-                "params": [],
             },
         ]
 
@@ -375,39 +350,52 @@ class ChatGPTPlatform(BasePlatform):
             return {"ok": False, "error": result.error_message}
 
         if action_id == "payment_link":
-            from platforms.chatgpt.payment import generate_plus_link, generate_team_link
+            from platforms.chatgpt.payment import generate_plus_link, generate_plus_link_via_mooizz
 
-            plan = str(params.get("plan", "plus") or "plus").strip().lower()
             country = str(params.get("country", "US") or "US").strip().upper()
-            if plan == "plus":
+            billing_currency = "USD"
+            source = "mooizz"
+            source_mode = "direct"
+            selected_link_type = ""
+            url = ""
+            fallback_error = ""
+            try:
+                mooizz_result = generate_plus_link_via_mooizz(a, proxy=proxy, country=country)
+                url = str(mooizz_result.get("url") or "").strip()
+                billing_currency = str(mooizz_result.get("billing_currency") or "USD").strip().upper()
+                source = str(mooizz_result.get("source") or "mooizz").strip()
+                source_mode = str(mooizz_result.get("mode") or "direct").strip()
+                selected_link_type = str(mooizz_result.get("selected_link_type") or "").strip()
+            except Exception as exc:
+                fallback_error = str(exc)
+                source = "local_fallback"
                 url = generate_plus_link(a, proxy=proxy, country=country)
-            else:
-                url = generate_team_link(
-                    a,
-                    workspace_name=params.get("workspace_name", "MyTeam"),
-                    price_interval=params.get("price_interval", "month"),
-                    seat_quantity=int(params.get("seat_quantity", 5) or 5),
-                    proxy=proxy,
-                    country=country,
-                )
-            plan_label = "Plus" if plan == "plus" else "Team"
-            description = f"ChatGPT {plan_label} payment link ({country})"
+            description = f"ChatGPT Plus payment link ({country})"
             return {
                 "ok": bool(url),
                 "data": {
                     "url": url,
                     "cashier_url": url,
-                    "plan": plan,
+                    "plan": "plus",
                     "country": country,
+                    "billing_currency": billing_currency,
+                    "source": source,
+                    "source_mode": source_mode,
+                    "selected_link_type": selected_link_type,
                     "description": description,
-                    "message": f"{plan_label} 支付链接已生成，可直接打开或复制。",
+                    "message": "已通过 access_token 代取 Plus 长链，可直接打开或复制。",
+                    "fallback_error": fallback_error,
                 },
                 "account_extra_patch": {
                     "cashier_url": url,
                     "payment_link": {
                         "url": url,
-                        "plan": plan,
+                        "plan": "plus",
                         "country": country,
+                        "billing_currency": billing_currency,
+                        "source": source,
+                        "source_mode": source_mode,
+                        "selected_link_type": selected_link_type,
                         "description": description,
                     },
                 },
@@ -469,104 +457,4 @@ class ChatGPTPlatform(BasePlatform):
                 )
             return {"ok": ok, "data": msg}
 
-        if action_id == "upload_contribution":
-            from platforms.chatgpt.cpa_upload import generate_token_json, upload_to_contribution
-
-            token_data = generate_token_json(a)
-            ok, msg = upload_to_contribution(
-                token_data,
-                api_url=params.get("api_url"),
-                api_key=params.get("api_key"),
-            )
-            return {"ok": ok, "data": msg}
-
-        if action_id == "auto_pay":
-            from platforms.chatgpt.payment_auto import run_payment_from_config_store, PaymentError
-            from core.config_store import config_store
-
-            plan = str(params.get("plan", "plus") or "plus").strip().lower()
-            plan_name = "chatgptplusplan" if plan == "plus" else "chatgptteamplan"
-            access_token = extra.get("access_token") or account.token or ""
-            session_token = extra.get("session_token") or extra.get("refresh_token") or ""
-            cookie_header = extra.get("cookie_header") or ""
-            device_id = extra.get("oai_device_id") or extra.get("device_id") or ""
-
-            if not access_token:
-                return {"ok": False, "error": "缂哄皯 access_token锛岃鍏堝埛鏂?Token"}
-
-            cfg = config_store.get_all()
-            proxy_url = proxy or str(cfg.get("proxy_url") or "").strip() or ""
-            proxy_geo = str(cfg.get("proxy_geo_country") or "").strip()
-            chosen_provider = str(params.get("provider") or "").strip().lower()
-            overrides = {}
-            if chosen_provider:
-                overrides["payment_provider"] = chosen_provider
-
-            try:
-                result = run_payment_from_config_store(
-                    plan_name=plan_name,
-                    access_token=access_token,
-                    session_token=session_token,
-                    cookie_header=cookie_header,
-                    device_id=device_id,
-                    proxy_url=proxy_url,
-                    proxy_geo_country=proxy_geo,
-                    config_overrides=overrides if overrides else None,
-                )
-            except PaymentError as pe:
-                return {"ok": False, "error": str(pe)}
-
-            result_dict = result.to_dict()
-            plan_label = "Plus" if plan == "plus" else "Team"
-            if result.success:
-                msg = f"{plan_label} 鏀粯鎴愬姛 state={result.state}"
-                if result.receipt_url:
-                    msg += f" receipt={result.receipt_url[:60]}"
-            else:
-                diag = result.diagnostic_code or "unknown"
-                msg = f"{plan_label} 鏀粯澶辫触 state={result.state} diag={diag} error={result.error}"
-
-            return {
-                "ok": result.success,
-                "data": {"message": msg, "result": result_dict},
-                "error": result.error if not result.success else "",
-                "account_extra_patch": {
-                    "auto_pay_state": result.state if result.success else f"failed:{result.state}",
-                    "auto_pay_plan": plan,
-                    "auto_pay_provider": result.provider,
-                    "auto_pay_diagnostic_code": getattr(result, "diagnostic_code", ""),
-                    "auto_pay_receipt": result.receipt_url,
-                },
-            }
-
-        if action_id == "android_experiment":
-            from platforms.chatgpt.gopay_android_provider import run_gopay_android_experiment
-            from core.config_store import config_store
-
-            cfg = config_store.get_all()
-            cfg["proxy_url"] = proxy or str(cfg.get("proxy_url") or "").strip()
-            # 閫忎紶宸叉湁鐨?GoPay 鎵嬫満鍙?PIN
-            if extra.get("gopay_phone"):
-                cfg.setdefault("payment_gopay_phone", extra["gopay_phone"])
-            if extra.get("gopay_pin"):
-                cfg.setdefault("payment_gopay_pin", extra["gopay_pin"])
-
-            try:
-                report = run_gopay_android_experiment(cfg)
-                report_dict = report.to_dict()
-                return {
-                    "ok": report.payment_completed or report.auth_page_reached,
-                    "data": {
-                        "message": f"瀹為獙瀹屾垚 stage={report.stage} duration={report.duration_s}s",
-                        "report": report_dict,
-                    },
-                    "account_extra_patch": {
-                        "android_experiment_stage": report.stage,
-                        "android_experiment_diag": report.diagnostic_code,
-                    },
-                }
-            except Exception as exc:
-                return {"ok": False, "error": f"妯℃嫙鏈哄疄楠屽紓甯? {exc}"}
-
         raise NotImplementedError(f"鏈煡鎿嶄綔: {action_id}")
-

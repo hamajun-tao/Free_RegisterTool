@@ -40,7 +40,7 @@ export default function ContributionPage() {
   // 加载配置
   const loadConfig = async () => {
     try {
-      const data = await apiFetch('/api/contribution/config')
+      const data = await apiFetch('/contribution/config')
       setConfig(data)
       form.setFieldsValue(data)
     } catch (error: any) {
@@ -55,8 +55,8 @@ export default function ContributionPage() {
     setRefreshing(true)
     try {
       const [statsData, keyData] = await Promise.all([
-        apiFetch('/api/contribution/quota-stats'),
-        config.api_key ? apiFetch('/api/contribution/key-info') : Promise.resolve(null),
+        apiFetch('/contribution/quota-stats'),
+        config.api_key ? apiFetch('/contribution/key-info') : Promise.resolve(null),
       ])
       setQuotaStats(statsData)
       setKeyInfo(keyData)
@@ -71,7 +71,7 @@ export default function ContributionPage() {
   const handleSaveConfig = async (values: any) => {
     setLoading(true)
     try {
-      await apiFetch('/api/contribution/config', {
+      await apiFetch('/contribution/config', {
         method: 'POST',
         body: JSON.stringify(values),
       })
@@ -98,7 +98,7 @@ export default function ContributionPage() {
       content: '确定要生成新的 API Key 吗？新 Key 将自动保存到配置中。',
       onOk: async () => {
         try {
-          const result = await apiFetch('/api/contribution/generate-key', {
+          const result = await apiFetch('/contribution/generate-key', {
             method: 'POST',
           })
           if (result.key) {
@@ -134,7 +134,7 @@ export default function ContributionPage() {
       onOk: async () => {
         setRedeeming(true)
         try {
-          const result = await apiFetch('/api/contribution/redeem', {
+          const result = await apiFetch('/contribution/redeem', {
             method: 'POST',
             body: JSON.stringify({ amount_usd: redeemAmount }),
           })

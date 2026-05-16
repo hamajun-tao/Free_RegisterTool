@@ -8,7 +8,9 @@ import json
 def _utcnow():
     return datetime.now(timezone.utc)
 
-DATABASE_URL = "sqlite:///account_manager.db"
+import os as _os
+_DB_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "account_manager.db")
+DATABASE_URL = f"sqlite:///{_os.path.normpath(_DB_PATH)}"
 engine = create_engine(DATABASE_URL)
 
 

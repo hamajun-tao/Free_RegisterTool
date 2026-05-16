@@ -29,6 +29,24 @@ def test_build_account_api_request_uses_current_add_phone_endpoints():
     assert resend_request["endpoint"] == "https://auth.openai.com/api/accounts/phone-otp/resend"
 
 
+def test_build_account_api_request_accepts_structured_phone_validate_and_resend_payload():
+    validate_request = _build_account_api_request(
+        "phone_validate",
+        '{"code":"123456","state":"phone-state-1","pendingAuthenticationToken":"pat-1"}',
+        "https://auth.openai.com/add-phone",
+    )
+    resend_request = _build_account_api_request(
+        "phone_otp_resend",
+        '{"state":"phone-state-1","pendingAuthenticationToken":"pat-1"}',
+        "https://auth.openai.com/add-phone",
+    )
+
+    assert validate_request["endpoint"] == "https://auth.openai.com/api/accounts/phone-otp/validate"
+    assert validate_request["body"] == '{"code": "123456", "state": "phone-state-1", "pendingAuthenticationToken": "pat-1"}'
+    assert resend_request["endpoint"] == "https://auth.openai.com/api/accounts/phone-otp/resend"
+    assert resend_request["body"] == '{"state": "phone-state-1", "pendingAuthenticationToken": "pat-1"}'
+
+
 def test_create_account_uses_standard_sentinel_header():
     request = _build_account_api_request(
         "create_account",

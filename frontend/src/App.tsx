@@ -1,6 +1,6 @@
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import { ConfigProvider, Layout, Menu, Button } from 'antd'
+import { ConfigProvider, Layout, Menu, Button, Space, Spin, Typography } from 'antd'
 import {
   DashboardOutlined,
   UserOutlined,
@@ -10,28 +10,38 @@ import {
   ClockCircleOutlined,
   SunOutlined,
   MoonOutlined,
-  ThunderboltOutlined,
+  ControlOutlined,
 } from '@ant-design/icons'
 import zhCN from 'antd/locale/zh_CN'
-import Dashboard from '@/pages/Dashboard'
-import Accounts from '@/pages/Accounts'
-import Register from '@/pages/Register'
-import RegisterTaskPage from '@/pages/RegisterTaskPage'
-import ScheduledTasks from '@/pages/ScheduledTasks'
-import Proxies from '@/pages/Proxies'
-import Settings from '@/pages/Settings'
-import TaskHistory from '@/pages/TaskHistory'
-import Contribution from '@/pages/Contribution'
-import Login from '@/pages/Login'
 import { apiFetch, getToken } from '@/lib/utils'
 import { darkTheme, lightTheme } from './theme'
 import { RegisterTaskProvider } from '@/contexts/RegisterTaskContext'
 
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const Accounts = lazy(() => import('@/pages/Accounts'))
+const Register = lazy(() => import('@/pages/Register'))
+const RegisterTaskPage = lazy(() => import('@/pages/RegisterTaskPage'))
+const ScheduledTasks = lazy(() => import('@/pages/ScheduledTasks'))
+const Proxies = lazy(() => import('@/pages/Proxies'))
+const Settings = lazy(() => import('@/pages/Settings'))
+const TaskHistory = lazy(() => import('@/pages/TaskHistory'))
+const Login = lazy(() => import('@/pages/Login'))
+
 const { Sider, Content, Header } = Layout
+const { Text } = Typography
+
+function RouteFallback() {
+  return (
+    <div className="route-fallback">
+      <Spin size="large" />
+      <Text type="secondary">Loading workspace…</Text>
+    </div>
+  )
+}
 
 function AppContent() {
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() =>
-    (localStorage.getItem('theme') as 'dark' | 'light') || 'dark'
+    (localStorage.getItem('theme') as 'dark' | 'light') || 'light'
   )
   const [collapsed, setCollapsed] = useState(false)
   const [platforms, setPlatforms] = useState<{ key: string; label: string }[]>([])
@@ -40,24 +50,27 @@ function AppContent() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', themeMode === 'light')
-    document.documentElement.style.setProperty(
-      '--sider-trigger-border',
-      themeMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)'
-    )
     localStorage.setItem('theme', themeMode)
   }, [themeMode])
 
   useEffect(() => {
     apiFetch('/platforms')
-      .then(d => setPlatforms((d || [])
-        .filter((p: any) => p.name !== 'tavily')
-        .map((p: any) => ({ key: p.name, label: p.display_name }))))
+      .then((d) =>
+        setPlatforms(
+          (d || [])
+            .filter((p: { name: string }) => p.name !== 'tavily')
+            .map((p: { name: string; display_name: string }) => ({
+              key: p.name,
+              label: p.display_name,
+            }))
+        )
+      )
       .catch(() => setPlatforms([]))
   }, [])
 
   useEffect(() => {
     fetch('/api/auth/status')
-      .then(r => r.json())
+      .then((r) => r.json())
       .then((data) => {
         const hasPassword = !!data?.has_password
         const hasToken = !!getToken()
@@ -81,12 +94,17 @@ function AppContent() {
     if (path === '/history') return ['/history']
     if (path === '/proxies') return ['/proxies']
     if (path === '/settings') return ['/settings']
-    if (path === '/contribution') return ['/contribution']
+    if (path === '/scheduled') return ['/scheduled']
+    if (path === '/register-task') return ['/register-task']
     return ['/']
   }
 
   if (location.pathname === '/login') {
-    return <Login />
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Login />
+      </Suspense>
+    )
   }
 
   const menuItems = [
@@ -98,11 +116,16 @@ function AppContent() {
     {
       key: '/accounts',
       icon: <UserOutlined />,
-      label: '平台管理',
-      children: platforms.map(p => ({
+      label: '平台账号',
+      children: platforms.map((p) => ({
         key: `/accounts/${p.key}`,
         label: p.label,
       })),
+    },
+    {
+      key: '/register-task',
+      icon: <ControlOutlined />,
+      label: '注册任务',
     },
     {
       key: '/history',
@@ -120,11 +143,6 @@ function AppContent() {
       label: '代理管理',
     },
     {
-      key: '/contribution',
-      icon: <ThunderboltOutlined />,
-      label: '贡献',
-    },
-    {
       key: '/settings',
       icon: <SettingOutlined />,
       label: '全局配置',
@@ -133,51 +151,40 @@ function AppContent() {
 
   return (
     <ConfigProvider theme={currentTheme} locale={zhCN}>
-      <Layout style={{ minHeight: '100vh' }}>
+      <Layout className="app-shell" style={{ minHeight: '100vh' }}>
         <Sider
           collapsible
           collapsed={collapsed}
           onCollapse={setCollapsed}
+          width={248}
+          breakpoint="lg"
           style={{
-            background: currentTheme.token?.colorBgContainer,
             borderRight: `1px solid ${currentTheme.token?.colorBorder}`,
           }}
-          width={220}
         >
-          <div
-            style={{
-              height: 64,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderBottom: `1px solid ${currentTheme.token?.colorBorder}`,
-            }}
-          >
-            <DashboardOutlined style={{ fontSize: 20, color: currentTheme.token?.colorPrimary }} />
-            {!collapsed && (
-              <span
-                style={{
-                  marginLeft: 8,
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: currentTheme.token?.colorText,
-                }}
-              >
-                Account Manager
-              </span>
-            )}
+          <div className="app-sidebar-brand">
+            <Space align="center" size={12}>
+              <div className="app-sidebar-brand__mark">
+                <DashboardOutlined style={{ fontSize: 18 }} />
+              </div>
+              {!collapsed ? (
+                <div className="app-sidebar-brand__meta">
+                  <span className="app-sidebar-brand__title">Account Manager</span>
+                  <span className="app-sidebar-brand__subtitle">Fast registration workspace</span>
+                </div>
+              ) : null}
+            </Space>
           </div>
+
           <Menu
             mode="inline"
             selectedKeys={getSelectedKey()}
             defaultOpenKeys={['/accounts']}
             items={menuItems}
             onClick={({ key }) => navigate(key)}
-            style={{
-              borderRight: 0,
-              background: 'transparent',
-            }}
+            style={{ background: 'transparent' }}
           />
+
           <div
             style={{
               position: 'absolute',
@@ -189,53 +196,65 @@ function AppContent() {
           >
             <Button
               block
-              icon={isLight ? <SunOutlined /> : <MoonOutlined />}
+              icon={isLight ? <MoonOutlined /> : <SunOutlined />}
               onClick={() => setThemeMode(isLight ? 'dark' : 'light')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: collapsed ? 'center' : 'space-between',
+                height: 44,
               }}
             >
-              {!collapsed && (isLight ? '亮色模式' : '暗色模式')}
+              {!collapsed && (isLight ? '切换深色' : '切换亮色')}
             </Button>
           </div>
         </Sider>
-        <Layout style={{ background: currentTheme.token?.colorBgLayout }}>
+
+        <Layout className="app-content">
           <Header
+            className="app-topbar"
             style={{
               position: 'sticky',
               top: 0,
-              zIndex: 50,
-              height: 56,
-              padding: '0 24px',
-              background: isLight
-                ? 'rgba(255,255,255,.85)'
-                : 'rgba(15,23,42,.7)',
-              backdropFilter: 'saturate(180%) blur(12px)',
+              zIndex: 20,
+              height: 'var(--header-height)',
+              padding: '0 clamp(16px, 2vw, 28px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
               borderBottom: `1px solid ${currentTheme.token?.colorBorder}`,
             }}
-          />
+          >
+            <div>
+              <Text style={{ color: currentTheme.token?.colorTextSecondary, fontSize: 13 }}>
+                Auto registration workspace
+              </Text>
+            </div>
+          </Header>
+
           <Content
             style={{
-              padding: 24,
+              padding: '24px clamp(16px, 2vw, 28px)',
               overflow: 'auto',
-              background: currentTheme.token?.colorBgLayout,
+              minHeight: `calc(100vh - var(--header-height))`,
             }}
           >
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/accounts" element={<Accounts />} />
-            <Route path="/accounts/:platform" element={<Accounts />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/register-task" element={<RegisterTaskPage />} />
-            <Route path="/scheduled" element={<ScheduledTasks />} />
-            <Route path="/history" element={<TaskHistory />} />
-            <Route path="/proxies" element={<Proxies />} />
-            <Route path="/contribution" element={<Contribution />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/login" element={<Login />} />
-          </Routes>
+            <Suspense fallback={<RouteFallback />}>
+              <div key={location.pathname} className="route-stage">
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/accounts" element={<Accounts />} />
+                  <Route path="/accounts/:platform" element={<Accounts />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route path="/register-task" element={<RegisterTaskPage />} />
+                  <Route path="/scheduled" element={<ScheduledTasks />} />
+                  <Route path="/history" element={<TaskHistory />} />
+                  <Route path="/proxies" element={<Proxies />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/login" element={<Login />} />
+                </Routes>
+              </div>
+            </Suspense>
           </Content>
         </Layout>
       </Layout>

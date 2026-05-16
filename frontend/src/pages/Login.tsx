@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App, Card, ConfigProvider, Form, Input, Button, Typography } from 'antd'
+import { App, ConfigProvider, Form, Input, Button, Typography } from 'antd'
 import { LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons'
 import { setToken } from '@/lib/utils'
 import { darkTheme } from '@/theme'
@@ -55,35 +55,20 @@ function LoginContent() {
     }
   }
 
-  const cardStyle: React.CSSProperties = {
-    width: 380,
-    boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-    borderRadius: 12,
-  }
+  return (
+    <div className="login-shell">
+      <div className="login-panel">
+        <div className="login-panel__brand">
+          <div className="login-panel__mark">
+            {step === '2fa' ? <SafetyCertificateOutlined style={{ fontSize: 24 }} /> : <UserOutlined style={{ fontSize: 24 }} />}
+          </div>
+          <div className="login-panel__title">{step === '2fa' ? '双因子验证' : 'Account Manager'}</div>
+          <div className="login-panel__subtitle">
+            {step === '2fa' ? '输入验证器 App 中的 6 位验证码完成登录。' : '输入访问密码进入控制台。'}
+          </div>
+        </div>
 
-  const wrapStyle: React.CSSProperties = {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-  }
-
-  if (step === '2fa') {
-    return (
-      <div style={wrapStyle}>
-        <Card
-          style={cardStyle}
-          title={
-            <div style={{ textAlign: 'center', padding: '8px 0' }}>
-              <SafetyCertificateOutlined style={{ fontSize: 28, color: '#6366f1', marginBottom: 8, display: 'block' }} />
-              <div style={{ fontSize: 18, fontWeight: 700 }}>双因素验证</div>
-              <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
-                请输入验证器 App 中的 6 位验证码
-              </Typography.Text>
-            </div>
-          }
-        >
+        {step === '2fa' ? (
           <Form layout="vertical" onFinish={handleTotp} requiredMark={false}>
             <Form.Item
               name="code"
@@ -106,46 +91,29 @@ function LoginContent() {
                 验证并登录
               </Button>
             </Form.Item>
-            <div style={{ textAlign: 'center', marginTop: 12 }}>
+            <div style={{ marginTop: 14 }}>
               <Button type="link" size="small" onClick={() => setStep('password')}>
                 返回密码登录
               </Button>
             </div>
           </Form>
-        </Card>
-      </div>
-    )
-  }
+        ) : (
+          <Form layout="vertical" onFinish={handleLogin} requiredMark={false}>
+            <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
+              <Input.Password prefix={<LockOutlined />} placeholder="请输入访问密码" size="large" />
+            </Form.Item>
+            <Form.Item style={{ marginBottom: 0, marginTop: 8 }}>
+              <Button type="primary" htmlType="submit" block size="large" loading={loading}>
+                登录
+              </Button>
+            </Form.Item>
+          </Form>
+        )}
 
-  return (
-    <div style={wrapStyle}>
-      <Card
-        style={cardStyle}
-        title={
-          <div style={{ textAlign: 'center', padding: '8px 0', background: 'transparent' }}>
-            <UserOutlined style={{ fontSize: 28, color: '#6366f1', marginBottom: 8, display: 'block' }} />
-            <div style={{ fontSize: 18, fontWeight: 700 }}>Account Manager</div>
-            <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
-              请输入密码登录
-            </Typography.Text>
-          </div>
-        }
-      >
-        <Form layout="vertical" onFinish={handleLogin} requiredMark={false}>
-          <Form.Item
-            name="password"
-            label="密码"
-            rules={[{ required: true, message: '请输入密码' }]}
-          >
-            <Input.Password prefix={<LockOutlined />} placeholder="请输入访问密码" size="large" />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0, marginTop: 8 }}>
-            <Button type="primary" htmlType="submit" block size="large" loading={loading}>
-              登录
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
+        <Typography.Paragraph style={{ marginTop: 18, marginBottom: 0, color: 'var(--text-secondary)', fontSize: 12 }}>
+          控制台采用低动画、轻玻璃和蓝青高亮风格，优先保证表单和数据页性能。
+        </Typography.Paragraph>
+      </div>
     </div>
   )
 }

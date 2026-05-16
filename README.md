@@ -1,19 +1,37 @@
 # Free Register Tool
 
-A self-hosted account registration and management toolkit with a FastAPI backend, React frontend, plugin-based platform integrations, proxy support, mailbox adapters, and task scheduling.
+A self-hosted account registration and operations workspace with a FastAPI backend, React frontend, plugin-based platform integrations, mailbox adapters, proxy management, scheduling, and external sync support.
 
-This repository is intended for local deployment, development, and controlled automation workflows. Use it only in ways that comply with platform terms and applicable laws.
+This repository is intended for local deployment, controlled automation, development, and research workflows. Use it only in ways that comply with platform terms, local law, and your own risk controls.
 
-## Highlights
+## Preview
 
-- Multi-platform plugin architecture under `platforms/`
-- FastAPI backend with Web UI and REST API
-- React + TypeScript frontend
-- Task scheduling and batch execution
-- Proxy pool and runtime state management
-- Multiple mailbox integrations
-- Built-in ChatGPT-related account flows and token handling
-- Docker and local deployment options
+### Dashboard
+
+![Dashboard](docs/images/dashboard.png)
+
+### Settings Center
+
+![Settings Overview](docs/images/settings-overview.png)
+
+## What It Does
+
+- Multi-platform account workflows through a plugin architecture under `platforms/`
+- Web-based management UI for accounts, settings, logs, and scheduled tasks
+- Batch registration tasks with progress tracking and resumable task state
+- Mailbox provider abstraction for temporary mail and self-hosted mailbox flows
+- Captcha and browser automation support for supported providers and platforms
+- Proxy pool management and request routing controls
+- ChatGPT-oriented token management, status probing, payment-link retrieval, and Sub2API sync
+- Scheduled task execution for recurring registration workloads
+
+## Recent UI Improvements
+
+- Brighter, denser management UI with faster table interactions
+- Responsive accounts page with cleaner toolbar and compact action layout
+- Settings page flow summary for ChatGPT registration-related configuration
+- History and scheduler pages with tighter action grouping and better filtering
+- Reduced topbar clutter and cleaner right-side panel behavior
 
 ## Stack
 
@@ -33,17 +51,10 @@ platforms/    Platform plugins and platform-specific logic
 services/     Background services and integration helpers
 scripts/      Project utility scripts
 tests/        Automated tests
-tools/        Operational helper tools kept in the repo
+tools/        Operational helper tools
 docker/       Container entrypoint assets
 main.py       Backend entrypoint
 ```
-
-## Requirements
-
-- Python 3.12+
-- Node.js 18+
-- Git
-- A supported browser automation environment for Playwright/Camoufox
 
 ## Quick Start
 
@@ -78,7 +89,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Install browser dependencies
+### 4. Install browser automation dependencies
 
 ```bash
 python -m playwright install chromium
@@ -100,7 +111,7 @@ cd ..
 cp .env.example .env
 ```
 
-Then edit `.env` for your local setup.
+Then edit `.env` for your local environment and integrations.
 
 ### 7. Start the backend
 
@@ -108,7 +119,7 @@ Then edit `.env` for your local setup.
 python main.py
 ```
 
-Default API docs:
+Default docs:
 
 ```text
 http://localhost:8000/docs
@@ -128,9 +139,18 @@ Default dev URL:
 http://localhost:5173
 ```
 
+## Key Screens
+
+- `Dashboard`: status summary and platform distribution overview
+- `Accounts`: account list, detail drawer, batch actions, status sync, upload actions
+- `Register Task`: batch registration execution with live progress
+- `Scheduled Tasks`: recurring registration jobs
+- `Task History`: registration log inspection and cleanup
+- `Settings`: provider, captcha, integration, and platform-specific configuration
+
 ## Configuration Notes
 
-The project reads configuration from `.env` and persisted runtime settings.
+The project reads configuration from `.env` plus persisted runtime settings stored by the app.
 
 Common categories:
 
@@ -138,7 +158,8 @@ Common categories:
 - Captcha solver settings
 - Proxy settings
 - Mailbox provider credentials
-- External integration endpoints
+- External sync endpoints such as Sub2API
+- Platform-specific runtime options
 
 Start from [`.env.example`](./.env.example).
 
@@ -148,7 +169,31 @@ Start from [`.env.example`](./.env.example).
 pytest tests/
 ```
 
-Some repo scripts are operational helpers rather than automated tests. Prefer the `tests/` suite for repeatable verification.
+Some repository scripts are operator helpers rather than repeatable tests. Prefer the `tests/` suite for validation.
+
+## Privacy And Safe Publishing
+
+This repository is configured to keep local machine state, secrets, and personal runtime artifacts out of version control.
+
+Ignored local-only content includes:
+
+- `.env`
+- `data/`
+- `logs/`
+- `runtime/`
+- `static/`
+- `*.db`, `*.sqlite`, `*.sqlite3`
+- local tokens, Gmail OAuth files, temporary screenshots, and debug logs
+- local helper scripts and machine-specific operational files
+
+If you fork or publish your own copy, double-check that you are not committing:
+
+- API keys
+- mailbox credentials
+- OAuth token exports
+- backend logs
+- screenshots containing private account data
+- local path screenshots from integration pages
 
 ## Docker
 
@@ -166,24 +211,7 @@ docker-compose down
 - Shared abstractions live under `core/`
 - API routes live under `api/`
 - Frontend pages live under `frontend/src/pages/`
-
-## Tracked vs Local-Only Files
-
-This repository is intentionally configured to keep local machine state out of version control.
-
-Ignored local-only content includes:
-
-- `.env`
-- `data/`
-- `logs/`
-- `runtime/`
-- `static/`
-- `*.db`, `*.sqlite`, `*.sqlite3`
-- runtime JSON state files
-- local helper scripts and personal test files
-- screenshots, debug output, caches, and local logs
-
-If you add new machine-specific helpers, secrets, exports, or runtime data, keep them out of git as well.
+- UI primitives live under `frontend/src/components/` and `frontend/src/components/ui/`
 
 ## License
 
@@ -191,4 +219,4 @@ MIT. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
 
 ## Acknowledgement
 
-This repository builds on work from earlier upstream and forked projects in the same ecosystem. See project history and notices in the repository for attribution details.
+This repository builds on earlier upstream and forked work in the same ecosystem. See project history and notices in the repository for attribution details.

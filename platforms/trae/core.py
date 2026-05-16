@@ -1,5 +1,5 @@
 """Trae.ai 注册协议核心实现"""
-import random, string
+import random, string, time
 from typing import Optional, Callable
 
 BASE_URL = "https://ug-normal.trae.ai"
@@ -63,6 +63,9 @@ class TraeRegister:
 
     def step5_get_token(self):
         r = self.ex.post(f"{API_SG}/cloudide/api/v3/common/GetUserToken", json={})
+        if r.status_code != 200:
+            self.log(f"  GetUserToken status={r.status_code} resp={r.text[:200]}")
+            return ""
         return r.json().get("Result", {}).get("Token", "")
 
     def step6_check_login(self):
@@ -95,8 +98,17 @@ class TraeRegister:
         self.log(f"验证码: {otp}")
         user_id = self.step3_register(email, password, otp)
         self.step4_trae_login()
-        token = self.step5_get_token()
         result = self.step6_check_login()
+
+        token = ""
+        for i in range(4):
+            if i > 0:
+                time.sleep(1.2 * i)
+            token = self.step5_get_token()
+            if token:
+                break
+            self.log(f"  GetUserToken ??? token??? {i + 1}/4")
+
         cashier_url = self.step7_create_order(token)
         return {
             "email": email, "password": password,

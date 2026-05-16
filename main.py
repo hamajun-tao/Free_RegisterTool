@@ -1,7 +1,42 @@
-"""account_manager - 多平台账号管理后台"""
+"""account_manager - Multi-platform account management backend."""
 import os
 import sys
 from contextlib import asynccontextmanager
+
+
+def _setup_console_encoding():
+    """Ensure stdout/stderr can handle Unicode characters without crashing.
+
+    On Windows the default console encoding (e.g. cp936/GBK) cannot encode
+    many Unicode characters.  Without this wrapper a stray emoji or Chinese
+    character in a print() call raises UnicodeEncodeError and kills the process.
+    """
+    if hasattr(sys.stdout, "encoding") and sys.stdout.encoding:
+        try:
+            # Probe: if this round-trips we are already safe
+            "".encode(sys.stdout.encoding)
+        except (UnicodeEncodeError, LookupError):
+            pass
+        else:
+            return  # encoding is already Unicode-capable
+
+    # Replace stdout / stderr with wrappers that use utf-8 and
+    # gracefully replace characters the terminal cannot render.
+    try:
+        sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8",
+                          errors="replace", buffering=1)
+        sys.stderr = open(sys.stderr.fileno(), mode="w", encoding="utf-8",
+                          errors="replace", buffering=1)
+    except (OSError, ValueError, AttributeError):
+        # piped / redirected / detached — best-effort
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+_setup_console_encoding()
+
 from fastapi import FastAPI, Request
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +54,7 @@ from api.integrations import router as integrations_router
 from api.auth import router as auth_router
 from api.contribution import router as contribution_router
 from api.chatgpt import router as chatgpt_router
+from api.claude import router as claude_router
 
 EXPECTED_CONDA_ENV = os.getenv("APP_CONDA_ENV", "any-auto-register")
 
@@ -43,18 +79,18 @@ def _detect_conda_env() -> str:
 def _print_runtime_info() -> None:
     current_env = _detect_conda_env()
     print(f"[Runtime] Python: {sys.executable}")
-    print(f"[Runtime] Conda Env: {current_env or '未检测到'}")
+    print(f"[Runtime] Conda Env: {current_env or 'not detected'}")
     if EXPECTED_CONDA_ENV == "docker":
         return
     if current_env and current_env != EXPECTED_CONDA_ENV:
         print(
-            f"[WARN] 当前环境为 '{current_env}'，推荐使用 '{EXPECTED_CONDA_ENV}' 启动，"
-            "否则 Turnstile Solver 可能因依赖缺失而无法启动。"
+            f"[WARN] Current env is '{current_env}', expected '{EXPECTED_CONDA_ENV}'."
+            " Turnstile Solver may fail due to missing dependencies."
         )
     elif not current_env:
         print(
-            f"[WARN] 未检测到 conda 环境，推荐使用 '{EXPECTED_CONDA_ENV}' 启动，"
-            "否则 Turnstile Solver 可能因依赖缺失而无法启动。"
+            f"[WARN] No conda env detected, expected '{EXPECTED_CONDA_ENV}'."
+            " Turnstile Solver may fail due to missing dependencies."
         )
 
 
@@ -63,22 +99,22 @@ async def lifespan(app: FastAPI):
     _print_runtime_info()
     init_db()
     load_all()
-    print("[OK] 数据库初始化完成")
+    print("[OK] Database initialized")
     from core.registry import list_platforms
-    print(f"[OK] 已加载平台: {[p['name'] for p in list_platforms()]}")
+    print(f"[OK] Platforms loaded: {[p['name'] for p in list_platforms()]}")
     from core.scheduler import scheduler
     scheduler.start()
     if _env_enabled("APP_AUTOSTART_SOLVER"):
         from services.solver_manager import start_async
         start_async()
     else:
-        print("[Solver] 后端启动不自动拉起；需要时可在设置页手动启动")
+        print("[Solver] Not auto-starting; can be started manually in settings")
     # WhatsApp Relay 后台进程（GoPay OTP 全自动接收）
     if _env_enabled("APP_AUTOSTART_WA_RELAY"):
         from services.wa_relay_manager import start_async as _wa_start_async
         _wa_start_async(login_mode="qr")
     else:
-        print("[WA-Relay] 后端启动不自动拉起；需要时可在设置页手动启动")
+        print("[WA-Relay] Not auto-starting; can be started manually in settings")
     yield
     from core.scheduler import scheduler as _scheduler
     _scheduler.stop()
@@ -132,6 +168,7 @@ app.include_router(actions_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(chatgpt_router, prefix="/api")
+app.include_router(claude_router, prefix="/api")
 app.include_router(contribution_router)
 
 

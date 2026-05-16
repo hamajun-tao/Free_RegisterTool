@@ -1,6 +1,6 @@
 """
-注册流程引擎
-从 main.py 中提取并重构的注册流程
+Registration flow engine.
+Refactored and extracted registration workflow from main.py.
 """
 
 import base64
@@ -52,23 +52,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RegistrationResult:
-    """娉ㄥ唽缁撴灉"""
+    """Registration result dataclass."""
     success: bool
     email: str = ""
-    password: str = ""  # 娉ㄥ唽瀵嗙爜
+    password: str = ""
     account_id: str = ""
     workspace_id: str = ""
     access_token: str = ""
     refresh_token: str = ""
     id_token: str = ""
-    session_token: str = ""  # 浼氳瘽浠ょ墝
+    session_token: str = ""  # session token cookie value
     error_message: str = ""
     logs: list = None
     metadata: dict = None
-    source: str = "register"  # 'register' 鎴?'login'锛屽尯鍒嗚处鍙锋潵婧?
+    source: str = "register"  # 'register' 閹?'login'閿涘苯灏崚鍡氬閸欓攱娼靛┃?
 
     def to_dict(self) -> Dict[str, Any]:
-        """杞崲涓哄瓧鍏?"""
+        """Convert to dict."""
         return {
             "success": self.success,
             "email": self.email,
@@ -88,11 +88,11 @@ class RegistrationResult:
 
 @dataclass
 class SignupFormResult:
-    """鎻愪氦娉ㄥ唽琛ㄥ崟鐨勭粨鏋?"""
+    """閹绘劒姘﹀▔銊ュ斀鐞涖劌宕熼惃鍕波閺?"""
     success: bool
-    page_type: str = ""  # 鍝嶅簲涓殑 page.type 瀛楁
-    is_existing_account: bool = False  # 鏄惁涓哄凡娉ㄥ唽璐﹀彿
-    response_data: Dict[str, Any] = None  # 瀹屾暣鐨勫搷搴旀暟鎹?
+    page_type: str = ""  # snapshot of page.type field
+    is_existing_account: bool = False  # already registered account
+    response_data: Dict[str, Any] = None  # 鐎瑰本鏆ｉ惃鍕惙鎼存梹鏆熼幑?
     error_message: str = ""
 
 
@@ -113,7 +113,7 @@ class ConsumerEmailServiceAdapter:
     def wait_for_verification_code(self, email, timeout=60, otp_sent_at=None, exclude_codes=None):
         email_id = self.email_info.get("service_id")
         effective_excludes = set(exclude_codes or set()) | self._used_codes
-        self.log_fn(f"普通 ChatGPT 网页注册：等待邮箱 {email} 的验证码 ({timeout}s)...")
+        self.log_fn(f"ChatGPT web: waiting for OTP to {email} ({timeout}s)...")
         code = self.email_service.get_verification_code(
             email=self.email,
             email_id=email_id,
@@ -126,14 +126,14 @@ class ConsumerEmailServiceAdapter:
             code_text = str(code).strip()
             if code_text:
                 self._used_codes.add(code_text)
-            self.log_fn(f"普通 ChatGPT 网页注册：成功获取验证码 {code}")
+            self.log_fn(f"ChatGPT web: got OTP {code}")
         return code
 
 
 class RefreshTokenRegistrationEngine:
     """
-    娉ㄥ唽寮曟搸
-    璐熻矗鍗忚皟閭鏈嶅姟銆丱Auth 娴佺▼鍜?OpenAI API 璋冪敤
+    Registration engine that uses browser-based auth to obtain OpenAI API tokens.
+    鐠愮喕鐭楅崡蹇氱殶闁張宥呭閵嗕副Auth 濞翠胶鈻奸崪?OpenAI API 鐠嬪啰鏁?
     """
 
     def __init__(
@@ -148,27 +148,30 @@ class RefreshTokenRegistrationEngine:
         pre_oauth_auto_pay_hook: Optional[Callable[[RegistrationResult, dict], Optional[dict]]] = None,
     ):
         """
-        鍒濆鍖栨敞鍐屽紩鎿?
+        閸掓繂閸栨牗鏁為崘灞界穿閹?
 
         Args:
-            email_service: 閭鏈嶅姟瀹炰緥
-            proxy_url: 浠ｇ悊 URL
-            callback_logger: 鏃ュ織鍥炶皟鍑芥暟
-            task_uuid: 浠诲姟 UUID锛堢敤浜庢暟鎹簱璁板綍锛?
+            email_service: 闁張宥呭鐎圭偘绶?
+            proxy_url: 娴狅絿鎮?URL
+            callback_logger: 閺冦儱绻旈崶鐐剁殶閸戣姤鏆?
+            task_uuid: 娴犺濮?UUID閿涘牏鏁ゆ禍搴㈡殶閹圭氨鐠佹澘缍嶉敍?
         """
         self.email_service = email_service
         self.proxy_url = proxy_url
         self.callback_logger = callback_logger or (lambda msg: logger.info(msg))
         self.task_uuid = task_uuid
         self.browser_mode = str(browser_mode or "headless").strip().lower()
+        if self.browser_mode == "protocol":
+            self.callback_logger("[WARN] Auto-switching to headless mode for Cloudflare verification and PoW")
+            self.browser_mode = "headless"
         self.extra_config = dict(extra_config or {})
         self._task_control = task_control
         self._pre_oauth_auto_pay_hook = pre_oauth_auto_pay_hook
 
-        # 鍒涘缓 HTTP 瀹㈡埛绔?
+        # 閸掓稑缂?HTTP 鐎广垺鍩涚粩?
         self.http_client = OpenAIHTTPClient(proxy_url=proxy_url)
 
-        # 鍒涘缓 OAuth 绠＄悊鍣?
+        # 閸掓稑缂?OAuth 缁狅紕鎮婇崳?
         from .constants import OAUTH_CLIENT_ID, OAUTH_AUTH_URL, OAUTH_TOKEN_URL, OAUTH_REDIRECT_URI, OAUTH_SCOPE
         self.oauth_manager = OAuthManager(
             client_id=OAUTH_CLIENT_ID,
@@ -176,38 +179,39 @@ class RefreshTokenRegistrationEngine:
             token_url=OAUTH_TOKEN_URL,
             redirect_uri=OAUTH_REDIRECT_URI,
             scope=OAUTH_SCOPE,
-            proxy_url=proxy_url  # 浼犻€掍唬鐞嗛厤缃?
+            proxy_url=proxy_url  # 娴肩娀鈧帊鍞悶鍡涘帳缂?
         )
 
-        # 鐘舵€佸彉閲?
+        # 閻樿埖鈧礁褰夐柌?
         self.email: Optional[str] = None
-        self.password: Optional[str] = None  # 娉ㄥ唽瀵嗙爜
+        self.password: Optional[str] = None  # 濞夈劌鍞界€靛棛鐖?
         self.email_info: Optional[Dict[str, Any]] = None
         self.oauth_start: Optional[OAuthStart] = None
         self.session: Optional[cffi_requests.Session] = None
-        self.session_token: Optional[str] = None  # 浼氳瘽浠ょ墝
+        self.session_token: Optional[str] = None  # 娴兼俺鐦芥禒銈囧
         self.logs: list = []
-        self._otp_sent_at: Optional[float] = None  # OTP 鍙戦€佹椂闂存埑
-        self._device_id: Optional[str] = None  # 褰撳墠娉ㄥ唽娴佺▼澶嶇敤鐨?Device ID
-        self._used_verification_codes = set()  # 宸插彇杩囩殑楠岃瘉鐮侊紝閬垮厤浜屾鐧诲綍鏃舵崬鍒版棫鐮?
-        self._is_existing_account: bool = False  # 鏄惁涓哄凡娉ㄥ唽璐﹀彿锛堢敤浜庤嚜鍔ㄧ櫥褰曪級
-        self._token_acquisition_requires_login: bool = False  # 鏂版敞鍐岃处鍙烽渶瑕佷簩娆＄櫥褰曟嬁 token
+        self._otp_sent_at: Optional[float] = None  # OTP 閸欐垿鈧焦妞傞梻瀛樺煈
+        self._device_id: Optional[str] = None  # 瑜版挸澧犲▔銊ュ斀濞翠胶鈻兼径宥囨暏閻?Device ID
+        self._used_verification_codes = set()  # 瀹告彃褰囨潻鍥╂畱妤犲矁鐦夐惍渚婄礉闁灝鍘ゆ禍灞鹃惂璇茬秿閺冭埖宕崚鐗堟＋閻?
+        self._is_existing_account: bool = False  # 閺勬儊娑撳搫鍑″▔銊ュ斀鐠愶箑褰块敍鍫㈡暏娴滃氦鍤滈崝銊ф瑜版洩绱?
+        self._token_acquisition_requires_login: bool = False  # 閺傜増鏁為崘宀冨閸欑兘娓剁憰浣风癌濞嗭紕娅ヨぐ鏇熷瑏 token
         self._post_otp_continue_url: str = ""
         self._post_otp_page_type: str = ""
         self._relogin_requires_email_otp: bool = True
-        self._authorize_sentinel: Optional[str] = None  # authorize_continue sentinel锛屽鐢ㄤ簬鍚庣画姝ラ
+        self._authorize_sentinel: Optional[str] = None  # authorize_continue sentinel閿涘苯閻劋绨崥搴ｇ敾濮濄儵
         self._register_continue_url: str = ""
         self._browser_frontend_state: Dict[str, Any] = {}
+        self._phone_otp_context: Dict[str, Any] = {}
         self._about_you_create_account_already_exists_without_consent: bool = False
         self._authorization_context_bootstrap_attempted: bool = False
         self._last_phone_failure_reason: str = ""
         self._oauth_blocked_by_phone: bool = False
         self._proxy_geo_country: str = ""
 
-        # ---- 隐蔽性增强组件 ----
-        # Session 级指纹统一（版本号、视口、Accept-Language 锁定）
+        # ---- 闅愯斀鎬у寮虹粍浠?----
+        # Session 绾ф寚绾圭粺涓€锛堢増鏈彿銆佽鍙ｃ€丄ccept-Language 閿佸畾锛?
         self._session_fp: SessionFingerprint = SessionFingerprint()
-        # 人类行为模拟器
+        # 浜虹被琛屼负妯℃嫙鍣?
         self._behavior_sim: HumanBehaviorSimulator = HumanBehaviorSimulator(
             HumanBehaviorConfig(
                 min_delay=0.3,
@@ -219,12 +223,12 @@ class RefreshTokenRegistrationEngine:
             )
         )
         
-        # 将行为模拟器注入到 API 客户端中，实现自然的请求间隔
+        # 灏嗚涓烘ā鎷熷櫒娉ㄥ叆鍒?API 瀹㈡埛绔腑锛屽疄鐜拌嚜鐒剁殑璇锋眰闂撮殧
         self.http_client._behavior_sim = self._behavior_sim
         self.oauth_manager._behavior_sim = self._behavior_sim
 
     def _reinit_stealth_components(self, *, geo_code: str = None, identity_key: str = None):
-        """根据运行时信息重新初始化隐蔽性组件（如获取到 GeoIP 后）"""
+        """鏍规嵁杩愯鏃朵俊鎭噸鏂板垵濮嬪寲闅愯斀鎬х粍浠讹紙濡傝幏鍙栧埌 GeoIP 鍚庯級"""
         self._session_fp = SessionFingerprint(
             geo_code=geo_code,
             identity_key=identity_key,
@@ -232,29 +236,29 @@ class RefreshTokenRegistrationEngine:
         self._behavior_sim.reset()
 
     def _log(self, message: str, level: str = "info"):
-        """璁板綍鏃ュ織"""
+        """鐠佹澘缍嶉弮銉ョ箶"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_message = f"[{timestamp}] {message}"
 
-        # 娣诲姞鍒版棩蹇楀垪琛?
+        # 濞ｈ濮為崚鐗堟）韫囨鍨悰?
         self.logs.append(log_message)
 
-        # 璋冪敤鍥炶皟鍑芥暟
+        # 鐠嬪啰鏁ら崶鐐剁殶閸戣姤鏆?
         if self.callback_logger:
             try:
                 self.callback_logger(log_message)
             except Exception as e:
                 logger.warning("Registration log callback failed: %s", e)
 
-        # 璁板綍鍒版暟鎹簱锛堝鏋滄湁鍏宠仈浠诲姟锛?
+        # 鐠佹澘缍嶉崚鐗堟殶閹圭氨閿涘牆閺嬫粍婀侀崗瀹犱粓娴犺濮熼敍?
         if self.task_uuid:
             try:
                 with get_db() as db:
                     crud.append_task_log(db, self.task_uuid, log_message)
             except Exception as e:
-                logger.warning(f"璁板綍浠诲姟鏃ュ織澶辫触: {e}")
+                logger.warning(f"鐠佹澘缍嶆禒璇插閺冦儱绻旀径杈Е: {e}")
 
-        # 鏍规嵁绾у埆璁板綍鍒版棩蹇楃郴缁?
+        # 閺嶈宓佺痪褍鍩嗙拋鏉跨秿閸掔増妫╄箛妤冮兇缂?
         if level == "error":
             logger.error(message)
         elif level == "warning":
@@ -268,7 +272,7 @@ class RefreshTokenRegistrationEngine:
             task_control.checkpoint(consume_skip=consume_skip)
 
     def _generate_password(self, length: int = DEFAULT_PASSWORD_LENGTH) -> str:
-        """生成随机密码"""
+        """鐢熸垚闅忔満瀵嗙爜"""
         resolved_length = max(int(length or DEFAULT_PASSWORD_LENGTH), 8)
         return generate_random_password(resolved_length)
 
@@ -322,6 +326,8 @@ class RefreshTokenRegistrationEngine:
             country = part.strip()
             if country and country not in countries:
                 countries.append(country)
+        if "10" in countries:
+            countries = ["10"] + [country for country in countries if country != "10"]
         return countries or [default]
 
     @classmethod
@@ -355,6 +361,7 @@ class RefreshTokenRegistrationEngine:
             "environment_unusable_fraud_guard": 100,
             "fraud_guard_proxy_rotated": 95,
             "fraud_guard": 90,
+            "session_invalid_state": 88,
             "phone_rate_limited": 85,
             "rate_limit_exceeded": 85,
             "cloudflare_blocked": 80,
@@ -390,7 +397,7 @@ class RefreshTokenRegistrationEngine:
             self._last_phone_failure_reason = new_reason
 
     def _normalize_browser_cookies(self, cookies: Any) -> list[dict]:
-        """鍏煎 Playwright cookie 鍒楄〃鍜?{name: value} 褰㈠紡鐨?cookie 鏄犲皠銆?"""
+        """閸忕厧 Playwright cookie 閸掓銆冮崪?{name: value} 瑜般垹绱￠惃?cookie 閺勭姴鐨犻妴?"""
         if not cookies:
             return []
         if isinstance(cookies, dict):
@@ -427,7 +434,7 @@ class RefreshTokenRegistrationEngine:
         return normalized
 
     def _get_session_cookies_for_browser(self) -> Optional[list[dict]]:
-        """浠?curl_cffi 浼氳瘽鎻愬彇 cookie锛岀敤浜庢敞鍏ユ祻瑙堝櫒涓婁笅鏂囬伩鍏?浼氳瘽宸茬粨鏉?銆?"""
+        """娴?curl_cffi 娴兼俺鐦介幓鎰絿 cookie閿涘瞼鏁ゆ禍搴㈡暈閸忋儲绁荤憴鍫濇珤娑撳﹣绗呴弬鍥缉閸?娴兼俺鐦藉鑼波閺?閵?"""
         try:
             if not self.session:
                 return None
@@ -523,7 +530,7 @@ class RefreshTokenRegistrationEngine:
                 "flow_order": "before_oauth",
                 "error": str(exc),
             }
-            return False  # 异常路径同样需要阻止 OAuth，原来缺少此行导致异常被吞掉后流程继续
+            return False  # exception path also needs to block OAuth; previously missing this line caused swallowed exceptions
         return True
 
     def _get_browser_storage_state(self) -> Optional[dict]:
@@ -697,7 +704,7 @@ class RefreshTokenRegistrationEngine:
             f"cookies={len(initial_cookies or [])}, "
             f"storage_keys={len(self._summarize_storage_keys(initial_storage_state))}"
         )
-        # 操作前注入自然延迟（模拟用户思考/等待）
+        # 鎿嶄綔鍓嶆敞鍏ヨ嚜鐒跺欢杩燂紙妯℃嫙鐢ㄦ埛鎬濊€?绛夊緟锛?
         self._behavior_sim.natural_delay(0.5, 1.5)
 
         browser_result = browser_form_submit(
@@ -736,17 +743,88 @@ class RefreshTokenRegistrationEngine:
         )
 
     def _check_ip_location(self) -> Tuple[bool, Optional[str]]:
-        """检查 IP 地理位置"""
+        """妫€鏌?IP 鍦扮悊浣嶇疆"""
         try:
-            return self.http_client.check_ip_location()
+            ip_ok, geo = self.http_client.check_ip_location()
+            geo_value = str(geo or "").strip().upper()
+            if not ip_ok and not geo_value:
+                self._log(
+                    "IP location check returned blocked-without-geo; continue with proxy connectivity gate",
+                    "warning",
+                )
+                return True, None
+            if geo_value:
+                self._proxy_geo_country = geo_value
+            elif ip_ok:
+                self._log("IP location trace unavailable; continue without proxy geo hint", "warning")
+            return ip_ok, geo
         except Exception as e:
-            self._log(f"检查 IP 地理位置失败: {e}", "error")
-            return False, None
+            self._log(f"妫€鏌?IP 鍦扮悊浣嶇疆澶辫触: {e}", "error")
+            return True, None
+
+    def _validate_proxy_connectivity(self, test_url: str = "https://chatgpt.com/") -> Tuple[bool, str]:
+        """Pre-check proxy connectivity to target domain, avoiding wasting mailboxes and retries on dead proxies.
+
+        Criteria:
+        - Connection reset (ERR_CONNECTION_RESET) -> proxy unusable
+        - TLS handshake failure -> proxy or network issue
+        - Timeout -> proxy too slow
+        - Success (200/403/other non-network-error) -> proxy reachable
+
+        Returns:
+            (ok, detail): ok=True means proxy can reach target domain.
+        """
+        import time as _time
+        detail_parts: list[str] = []
+
+        # 蹇€?curl_cffi 鎺㈡祴
+        try:
+            probe_session = self.session or getattr(self.http_client, "session", None)
+            if probe_session is None:
+                self._log("Proxy connectivity check failed: no available HTTP session", "error")
+                return False, "NETWORK_ERROR: no available HTTP session"
+
+            session_headers = getattr(probe_session, "headers", None)
+            if not isinstance(session_headers, dict):
+                session_headers = {}
+            _t0 = _time.monotonic()
+            r = probe_session.get(
+                test_url,
+                headers={
+                    "User-Agent": str(session_headers.get("User-Agent", "") or ""),
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+                allow_redirects=True,
+                timeout=15,
+            )
+            elapsed = _time.monotonic() - _t0
+            detail_parts.append(f"status={r.status_code}")
+            detail_parts.append(f"elapsed={elapsed:.1f}s")
+            self._log(f"Proxy connectivity check passed: {'; '.join(detail_parts)}")
+            return True, "; ".join(detail_parts)
+        except Exception as exc:
+            exc_msg = str(exc)
+            exc_lower = exc_msg.lower()
+            elapsed = _time.monotonic() - _t0 if '_t0' in dir() else 0.0
+
+            if "connection was reset" in exc_lower or "err_connection_reset" in exc_lower:
+                detail = f"CONNECTION_RESET (proxy actively rejecting connections): {exc_msg[:120]}"
+            elif "tls" in exc_lower or "ssl" in exc_lower or "certificate" in exc_lower:
+                detail = f"TLS_ERROR (proxy or network TLS issue): {exc_msg[:120]}"
+            elif "timeout" in exc_lower or "timed out" in exc_lower:
+                detail = f"TIMEOUT (proxy timeout): {exc_msg[:120]}"
+            elif "resolve" in exc_lower or "dns" in exc_lower or "getaddrinfo" in exc_lower:
+                detail = f"DNS_ERROR (鍩熷悕瑙ｆ瀽澶辫触): {exc_msg[:120]}"
+            else:
+                detail = f"NETWORK_ERROR: {exc_msg[:120]}"
+            self._log(f"Proxy connectivity check failed: {detail}", "error")
+            return False, detail
 
     def _create_email(self) -> bool:
-        """创建邮箱"""
+        """Create email mailbox"""
         try:
-            self._log(f"正在创建 {self.email_service.service_type.value} 邮箱...")
+            self._log(f"Creating {self.email_service.service_type.value} mailbox...")
             self.email_info = self.email_service.create_email()
 
             if not self.email_info or "email" not in self.email_info:
@@ -756,25 +834,28 @@ class RefreshTokenRegistrationEngine:
             email_value = str(self.email_info.get("email") or "").strip()
             if not email_value:
                 self._log(
-                    f"创建邮箱失败: {self.email_service.service_type.value} 返回空邮箱地址",
+                    f"Mailbox creation failed: {self.email_service.service_type.value} returned empty address",
                     "error",
                 )
                 return False
 
             self.email_info["email"] = email_value
             self.email = email_value
-            self._log(f"成功创建邮箱: {self.email}")
+            self._log(f"Mailbox created: {self.email}")
             return True
 
         except Exception as e:
-            self._log(f"创建邮箱失败: {e}", "error")
+            self._log(f"Mailbox creation failed: {e}", "error")
             return False
 
     def _start_oauth(self, *, prompt: Optional[str] = "login") -> bool:
-        """寮€濮?OAuth 娴佺▼"""
+        """Start the OAuth authorization flow."""
         try:
             self._log("开始 OAuth 授权流程...")
-            self._log("当前走的是 Sign in with ChatGPT OAuth 应用入口，不是普通 chatgpt.com 消费者首页注册", "info")
+            self._log(
+                "当前走的是 Sign in with ChatGPT OAuth 应用入口，不是普通 chatgpt.com 消费者首页注册",
+                "info",
+            )
             self.oauth_start = self.oauth_manager.start_oauth(prompt=prompt)
             self._log(f"OAuth URL 已生成: {self.oauth_start.auth_url[:80]}...")
             return True
@@ -783,19 +864,19 @@ class RefreshTokenRegistrationEngine:
             return False
 
     def _init_session(self) -> bool:
-        """鍒濆鍖栦細璇?"""
+        """Initialize the HTTP session."""
         try:
             self.session = self.http_client.session
             if self._device_id:
                 seed_oai_device_cookie(self.session, self._device_id)
             return True
         except Exception as e:
-            self._log(f"鍒濆鍖栦細璇濆け璐? {e}", "error")
+            self._log(f"初始化 session 失败: {e}", "error")
             return False
 
     def _warmup_page(self, page_url: str, label: str = "") -> bool:
-        """浣跨敤娴忚鍣ㄩ鐑〉闈紝瑙ｅ喅 Cloudflare challenge 骞舵敞鍏?cookie 鍒颁細璇濄€?"""
-        self._log(f"{label}: 娴忚鍣ㄩ鐑〉闈?{page_url}...")
+        """Warm up a page and sync cookies after Cloudflare challenge."""
+        self._log(f"{label}: 浏览器访问 {page_url} ...")
         try:
             cookies = warmup_page_and_extract_cookies(
                 page_url=page_url,
@@ -806,30 +887,30 @@ class RefreshTokenRegistrationEngine:
                 log_fn=lambda msg: self._log(msg),
                 session_fp=self._session_fp,
             )
-            
-            # 添加：页面加载后的自然观察延迟
+
             self._behavior_sim.page_load_observation()
-            
+
             if not cookies:
                 self._log(f"{label}: 浏览器预热未获取到 cookie", "warning")
                 return False
 
             cookies = self._inject_browser_cookies(cookies)
-                
+
             cf = any(c.get("name") == "cf_clearance" for c in cookies)
             cf_bm = any(c.get("name") == "__cf_bm" for c in cookies)
             self._log(
-                f"{label}: 娉ㄥ叆 {len(cookies)} 涓?cookie"
+                f"{label}: 获取到 {len(cookies)} 个 cookie"
                 + (f", cf_clearance={'yes' if cf else 'no'}" if cf else "")
                 + (f", __cf_bm={'yes' if cf_bm else 'no'}" if cf_bm else "")
             )
             return True
         except Exception as e:
-            self._log(f"{label}: 娴忚鍣ㄩ鐑紓甯? {e}", "warning")
+            self._log(f"{label}: 页面预热失败: {e}", "warning")
             return False
 
+
     def _get_device_id(self) -> Optional[str]:
-        """鑾峰彇骞跺鐢?Device ID锛屽悓鏃惰闂?OAuth URL 寤虹珛褰撳墠浼氳瘽銆?"""
+        """閼惧嘲褰囬獮璺洪悽?Device ID閿涘苯鎮撻弮鎯伴梻?OAuth URL 瀵よ櫣鐝涜ぐ鎾冲娴兼俺鐦介妴?"""
         if not self.oauth_start:
             return None
 
@@ -854,12 +935,12 @@ class RefreshTokenRegistrationEngine:
                     return self._device_id
 
                 self._log(
-                    f"获取 Device ID 失败: 建立 OAuth 会话返回 HTTP {response.status_code} (第 {attempt}/{max_attempts} 次)",
+                    f"Failed to get Device ID: OAuth session returned HTTP {response.status_code} (绗?{attempt}/{max_attempts} 娆?",
                     "warning" if attempt < max_attempts else "error"
                 )
             except Exception as e:
                 self._log(
-                    f"获取 Device ID 失败: {e} (第 {attempt}/{max_attempts} 次)",
+                    f"Failed to get Device ID: {e} (绗?{attempt}/{max_attempts} 娆?",
                     "warning" if attempt < max_attempts else "error"
                 )
 
@@ -871,7 +952,7 @@ class RefreshTokenRegistrationEngine:
         return None
 
     def _default_user_agent(self) -> str:
-        # 优先使用 SessionFingerprint 锁定的 UA
+        # 浼樺厛浣跨敤 SessionFingerprint 閿佸畾鐨?UA
         if self._session_fp:
             return self._session_fp.user_agent
         try:
@@ -954,7 +1035,7 @@ class RefreshTokenRegistrationEngine:
         log_label: str,
         record_existing_account: bool = True,
     ) -> SignupFormResult:
-        """鎻愪氦鎺堟潈鍏ュ彛琛ㄥ崟 鈥?鐩存帴閫氳繃 curl_cffi session 璋冪敤 API锛宑f_clearance 宸茬敱 _get_device_id 鍐欏叆 session銆?"""
+        """閹绘劒姘﹂幒鍫熸綀閸忋儱褰涚悰銊ュ礋 閳?閻╁瓨甯撮柅姘崇箖 curl_cffi session 鐠嬪啰鏁?API閿涘畱f_clearance 瀹歌尙鏁?_get_device_id 閸愭瑥鍙?session閵?"""
         try:
             if screen_hint == "signup":
                 initial_cookies = self._get_session_cookies_for_browser()
@@ -985,7 +1066,7 @@ class RefreshTokenRegistrationEngine:
                 status = int(browser_result.get("status") or 0)
                 resp_body = str(browser_result.get("body") or "")
             else:
-                self._log(f"{log_label}: 通过 curl_cffi session 直接调用 API...")
+                self._log(f"{log_label}: Calling API directly via curl_cffi session...")
 
                 headers = self._build_json_headers(
                     referer=referer,
@@ -1003,7 +1084,7 @@ class RefreshTokenRegistrationEngine:
 
                 status = resp.status_code
                 resp_body = resp.text
-            self._log(f"{log_label}状态: {status}")
+            self._log(f"{log_label}Status: {status}")
 
             if status < 200 or status >= 400:
                 error_preview = (resp_body or "")[:500]
@@ -1019,7 +1100,7 @@ class RefreshTokenRegistrationEngine:
                     )
                 elif status == 403:
                     self._log(
-                        f"授权入口 HTTP 403（非 Cloudflare）: {error_preview[:300]}",
+                        f"Auth entry HTTP 403 (non-Cloudflare): {error_preview[:300]}",
                         "warning",
                     )
                 return SignupFormResult(
@@ -1027,11 +1108,11 @@ class RefreshTokenRegistrationEngine:
                     error_message=f"HTTP {status}: {resp_body[:200]}"
                 )
 
-            # 瑙ｆ瀽鍝嶅簲鍒ゆ柇璐﹀彿鐘舵€?
+            # 鐟欙絾鐎介崫宥呯安閸掋倖鏌囩拹锕€褰块悩鑸碘偓?
             try:
                 response_data = json.loads(resp_body or "{}")
                 page_type = response_data.get("page", {}).get("type", "")
-                self._log(f"响应页面类型: {page_type}")
+                self._log(f"Response page type: {page_type}")
 
                 is_existing = page_type in {
                     OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"],
@@ -1044,14 +1125,14 @@ class RefreshTokenRegistrationEngine:
                             self._log("检测到服务端切换到登录密码页面，将自动切换到登录流程")
                         else:
                             self._otp_sent_at = time.time()
-                            self._log("检测到已注册账号，将自动切换到登录流程")
+                            self._log("Detected already-registered account, auto-switching to login flow")
                         self._is_existing_account = True
                     else:
                         if page_type == OPENAI_PAGE_TYPES["LOGIN_PASSWORD"]:
-                            self._log("登录流程已进入密码页")
+                            self._log("Login flow has reached password page")
                         else:
                             self._otp_sent_at = time.time()
-                            self._log("登录流程已触发，等待系统发送验证码")
+                            self._log("Login flow triggered, waiting for system to send OTP")
 
                 return SignupFormResult(
                     success=True,
@@ -1061,11 +1142,11 @@ class RefreshTokenRegistrationEngine:
                 )
 
             except Exception as parse_error:
-                self._log(f"解析响应失败: {parse_error}", "warning")
+                self._log(f"瑙ｆ瀽鍝嶅簲澶辫触: {parse_error}", "warning")
                 return SignupFormResult(success=True)
 
         except Exception as e:
-            self._log(f"{log_label}失败: {e}", "error")
+            self._log(f"{log_label}澶辫触: {e}", "error")
             return SignupFormResult(success=False, error_message=str(e))
 
     def _submit_signup_form(
@@ -1075,29 +1156,29 @@ class RefreshTokenRegistrationEngine:
         *,
         record_existing_account: bool = True,
     ) -> SignupFormResult:
-        """鎻愪氦娉ㄥ唽鍏ュ彛琛ㄥ崟銆?"""
+        """閹绘劒姘﹀▔銊ュ斀閸忋儱褰涚悰銊ュ礋閵?"""
         return self._submit_auth_start(
             did,
             sen_token,
             screen_hint="signup",
             referer="https://auth.openai.com/create-account",
-            log_label="鎻愪氦娉ㄥ唽琛ㄥ崟",
+            log_label="提交注册邮箱",
             record_existing_account=record_existing_account,
         )
 
     def _submit_login_start(self, did: str, sen_token: Optional[str]) -> SignupFormResult:
-        """鎻愪氦鐧诲綍鍏ュ彛琛ㄥ崟銆?"""
+        """閹绘劒姘﹂惂璇茬秿閸忋儱褰涚悰銊ュ礋閵?"""
         return self._submit_auth_start(
             did,
             sen_token,
             screen_hint="login",
             referer="https://auth.openai.com/log-in",
-            log_label="提交登录入口",
+            log_label="Submit login entry",
             record_existing_account=False,
         )
 
     def _submit_login_password(self) -> SignupFormResult:
-        """鎻愪氦鐧诲綍瀵嗙爜 鈥?閫氳繃 curl_cffi session 鐩存帴璋冪敤 API锛宑f_clearance 宸插湪 session 涓€?"""
+        """閹绘劒姘﹂惂璇茬秿鐎靛棛鐖?閳?闁俺绻?curl_cffi session 閻╁瓨甯寸拫鍐暏 API閿涘畱f_clearance 瀹告彃婀?session 娑撯偓?"""
         try:
             login_pwd_sentinel = build_sentinel_token(
                 self.session,
@@ -1121,7 +1202,7 @@ class RefreshTokenRegistrationEngine:
             )
 
             status = resp.status_code
-            self._log(f"提交登录密码状态: {status}")
+            self._log(f"Login password submit status: {status}")
 
             if status < 200 or status >= 400:
                 return SignupFormResult(
@@ -1131,12 +1212,12 @@ class RefreshTokenRegistrationEngine:
 
             response_data = json.loads(resp.text or "{}")
             page_type = response_data.get("page", {}).get("type", "")
-            self._log(f"登录密码响应页面类型: {page_type}")
+            self._log(f"Login password response page type: {page_type}")
 
             is_existing = page_type == OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]
             if is_existing:
                 self._otp_sent_at = time.time()
-                self._log("登录密码校验通过，等待系统发送验证码")
+                self._log("Password check passed, waiting for system to send OTP")
 
             return SignupFormResult(
                 success=True,
@@ -1146,7 +1227,7 @@ class RefreshTokenRegistrationEngine:
             )
 
         except Exception as e:
-            self._log(f"提交登录密码失败: {e}", "error")
+            self._log(f"Login password submit failed: {e}", "error")
             return SignupFormResult(success=False, error_message=str(e))
 
     def _probe_post_add_phone_state_after_failure(self) -> bool:
@@ -1175,7 +1256,7 @@ class RefreshTokenRegistrationEngine:
                 timeout=20,
             )
         except Exception as exc:
-            self._log(f"consent 页面探测失败: {exc}", "warning")
+            self._log(f"consent page probe failed: {exc}", "warning")
             return False
 
         consent_status = self._safe_int(getattr(consent_resp, "status_code", 0))
@@ -1211,7 +1292,7 @@ class RefreshTokenRegistrationEngine:
                 timeout=20,
             )
         except Exception as exc:
-            self._log(f"about-you 页面探测失败: {exc}", "warning")
+            self._log(f"about-you page probe failed: {exc}", "warning")
             return False
 
         about_status = self._safe_int(getattr(about_resp, "status_code", 0))
@@ -1220,7 +1301,7 @@ class RefreshTokenRegistrationEngine:
             auth_base="https://auth.openai.com",
         )
         if about_status == 403:
-            self._log("about-you 页面返回 403，姓名/生日资料尚未创建或授权上下文被阻塞", "warning")
+            self._log("about-you page returned 403, name/birthdate profile not yet created or auth context blocked", "warning")
             return False
         if 200 <= about_status < 400:
             about_page_type = extract_flow_state(
@@ -1242,8 +1323,8 @@ class RefreshTokenRegistrationEngine:
         return False
 
     def _reset_auth_flow(self) -> None:
-        """重置会话状态，准备使用全新 session 重新发起 OAuth 流程（保留 CF 防火墙令牌以防 403）。"""
-        # 1. 尝试提取现有的 Cloudflare pass
+        """Reset auth flow state and preserve Cloudflare cookies for a clean OAuth restart."""
+        # 1. Try to extract existing Cloudflare pass
         cf_cookies_dict = {}
         if self.session and hasattr(self.session, "cookies"):
             try:
@@ -1253,7 +1334,7 @@ class RefreshTokenRegistrationEngine:
             except Exception:
                 pass
                 
-        # 从之前的无头浏览器状态中提取（如果上一步没有或者为了更准确）
+        # 浠庝箣鍓嶇殑鏃犲ご娴忚鍣ㄧ姸鎬佷腑鎻愬彇锛堝鏋滀笂涓€姝ユ病鏈夋垨鑰呬负浜嗘洿鍑嗙‘锛?
         browser_cookies = self._browser_frontend_state.get("cookies", [])
         for c in browser_cookies:
             if c.get("name") in ("cf_clearance", "__cf_bm"):
@@ -1268,7 +1349,7 @@ class RefreshTokenRegistrationEngine:
         self._post_otp_page_type = ""
         self._relogin_requires_email_otp = True
         self._register_continue_url = ""
-        # 清除浏览器前端状态（cookies/storage），避免被 fraud_guard 标记的旧会话污染
+        # Clear browser frontend state (cookies/storage) to avoid fraud_guard-flagged old session contamination
         self._browser_frontend_state = {}
         self._authorize_sentinel = None
         self._authorization_context_bootstrap_attempted = False
@@ -1276,10 +1357,10 @@ class RefreshTokenRegistrationEngine:
         self._token_acquisition_requires_login = True
         self._relogin_requires_email_otp = True
         self._about_you_create_account_already_exists_without_consent = False
-        # 全新会话重置 fraud_guard 代理轮换计数
+        # Fresh session reset fraud_guard proxy rotation counter
         self._fraud_guard_proxy_rotations = 0
 
-        # 2. 将 CF Cookies 回注到崭新的会话中，欺骗 CF 免拦截
+        # 2. 灏?CF Cookies 鍥炴敞鍒板喘鏂扮殑浼氳瘽涓紝娆洪獥 CF 鍏嶆嫤鎴?
         if cf_cookies_dict:
             self.session = self.http_client.session
             for k, v in cf_cookies_dict.items():
@@ -1289,7 +1370,7 @@ class RefreshTokenRegistrationEngine:
                     pass
 
     def _prepare_authorize_flow(self, label: str) -> Tuple[Optional[str], Optional[str]]:
-        """鍒濆鍖栧綋鍓嶉樁娈电殑鎺堟潈娴佺▼锛岃繑鍥?device id 鍜?sentinel token銆?"""
+        """Initialize session, OAuth start, device id and sentinel token."""
         self._log(f"{label}: 初始化会话...")
         if not self._init_session():
             return None, None
@@ -1313,7 +1394,7 @@ class RefreshTokenRegistrationEngine:
 
     def _prepare_basic_account_flow(self) -> Tuple[Optional[str], Optional[str]]:
         """Prepare the OAuth-backed registration entry session before token OAuth."""
-        return self._prepare_authorize_flow("OAuth 注册入口会话")
+        return self._prepare_authorize_flow("OAuth registration entry session")
 
     @staticmethod
     def _split_generated_profile_name(full_name: str) -> Tuple[str, str]:
@@ -1349,6 +1430,35 @@ class RefreshTokenRegistrationEngine:
             or "email address, please login instead" in text
         )
 
+    @staticmethod
+    def _is_consumer_homepage_bootstrap_error(message: Any) -> bool:
+        text = str(message or "")
+        lowered = text.lower()
+        return (
+            "Homepage visit failed" in text
+            or "visit_homepage_failed" in lowered
+            or "homepage" in lowered
+            or "err_connection_reset" in lowered
+            or "connection was reset" in lowered
+            or "recv failure" in lowered
+            or "curl: (56)" in lowered
+            or "tls connect error" in lowered
+            or "err_tunnel_connection_failed" in lowered
+            or "err_proxy_connection_failed" in lowered
+        )
+
+    @staticmethod
+    def _is_account_creation_policy_error(message: Any) -> bool:
+        """Detect policy rejection during create_account that needs retry handling."""
+        text = str(message or "").lower()
+        return (
+            "registration_disallowed" in text
+            or "account_creation_blocked" in text
+            or "too_many_accounts" in text
+            or "signup_disabled" in text
+            or "unsupported_country" in text
+        )
+
     def _create_consumer_chatgpt_basic_account(self, result: RegistrationResult) -> Tuple[bool, str]:
         """Create the consumer ChatGPT account first, then continue with OAuth token login."""
         from .oauth_pkce_client import OAuthPkceClient
@@ -1364,8 +1474,8 @@ class RefreshTokenRegistrationEngine:
         user_info = generate_random_user_info()
         first_name, last_name = self._split_generated_profile_name(user_info.get("name", ""))
         birthdate = str(user_info.get("birthdate", "") or "").strip()
-        self._log("3. 普通 ChatGPT 网页注册建号...")
-        self._log(f"普通 ChatGPT 注册资料: {first_name} {last_name}, birthdate={birthdate}")
+        self._log("3. Standard ChatGPT web registration...")
+        self._log(f"ChatGPT registration profile: {first_name} {last_name}, birthdate={birthdate}")
 
         email_adapter = ConsumerEmailServiceAdapter(
             self.email_service,
@@ -1376,13 +1486,113 @@ class RefreshTokenRegistrationEngine:
 
         from .chatgpt_client import ChatGPTClient
 
-        for attempt in range(2):
+        # Browser warmup before registration: get cf_clearance + __cf_bm then proceed with curl_cffi flow
+        # Root fix: when browser proxy tunnel fails, rotate proxy and retry instead of "skip warmup and keep registering"; fail immediately if still broken.
+        cf_cookies: dict[str, str] = {}
+        warmup_connection_error = False
+        warmup_error_detail = ""
+
+        def _run_cf_warmup_once() -> Tuple[dict[str, str], bool, str]:
+            try:
+                warmup_cookies = warmup_page_and_extract_cookies(
+                    page_url="https://chatgpt.com/",
+                    proxy=self.proxy_url,
+                    timeout_ms=45000,
+                    headless=True,
+                    device_id=self._device_id,
+                    log_fn=lambda msg: self._log(msg),
+                    session_fp=self._session_fp,
+                )
+            except Exception as exc:
+                exc_text = str(exc)
+                self._log(f"CF warmup before registration exception: {exc_text}", "warning")
+                exc_lower = exc_text.lower()
+                if any(
+                    kw in exc_lower
+                    for kw in (
+                        "connection reset",
+                        "err_connection",
+                        "connection refused",
+                        "err_tunnel_connection_failed",
+                        "err_proxy_connection_failed",
+                    )
+                ):
+                    return {}, True, exc_text
+                return {}, False, ""
+
+            cookies_map = dict(warmup_cookies or {})
+            browser_error_category = str(cookies_map.pop("_browser_error_category", "") or "").strip().lower()
+            browser_error = str(cookies_map.pop("_browser_error", "") or "").strip()
+            is_connection_error = browser_error_category == "connection"
+            collected: dict[str, str] = {}
+            for name in ("cf_clearance", "__cf_bm"):
+                if name in cookies_map:
+                    collected[name] = cookies_map[name]
+            self._log(
+                f"CF warmup complete: cookies={len(cookies_map)}"
+                f", cf_clearance={'yes' if 'cf_clearance' in collected else 'no'}"
+                f", __cf_bm={'yes' if '__cf_bm' in collected else 'no'}"
+            )
+            if is_connection_error:
+                return collected, True, browser_error
+            return collected, False, ""
+
+        warmup_attempt_limit = min(max(1, self._get_fraud_guard_rotation_limit() + 1), 2)
+        for warmup_attempt in range(warmup_attempt_limit):
+            if warmup_attempt == 0:
+                self._log("CF warmup: browser visiting https://chatgpt.com/ ...")
+            else:
+                self._log("Proxy rotated, redoing CF warmup with new proxy...")
+
+            cf_cookies, warmup_connection_error, warmup_error_detail = _run_cf_warmup_once()
+            if not warmup_connection_error:
+                break
+
+            self._log(
+                f"CF warmup: browser connection error (proxy may not be able to reach chatgpt.com): {warmup_error_detail[:200]}",
+                "error",
+            )
+            if warmup_attempt >= warmup_attempt_limit - 1:
+                break
+            self._log("CF warmup detected proxy connectivity issue, attempting proxy rotation...", "warning")
+            rotated_proxy = self._try_rotate_proxy_on_fraud_guard()
+            if not rotated_proxy:
+                break
+
+        if warmup_connection_error:
+            self._log("CF warmup connection failed, skipping warmup and continuing with curl path (curl_cffi can use proxy directly)", "warning")
+            cf_cookies = {}
+            if not cf_cookies:
+                return False, f"proxy_browser_connectivity_failed: {warmup_error_detail or 'browser warmup connection failed'}"
+
+        max_bootstrap_attempts = max(2, self._get_fraud_guard_rotation_limit() + 1)
+        # If browser warmup already confirmed proxy cannot establish CONNECT tunnel, skip
+        # Browser Sentinel attempt inside ChatGPTClient, saving 5s timeout.
+        _skip_browser = warmup_connection_error or not cf_cookies
+        # registration_disallowed 閲嶈瘯绛栫暐锛氬厛姝ｅ父甯?sentinel 璇曪紝鍐嶄笉甯?sentinel 璇?
+        _skip_sentinel = False
+        for attempt in range(max_bootstrap_attempts):
             client = ChatGPTClient(
                 proxy=self.proxy_url,
                 verbose=False,
                 browser_mode=self.browser_mode,
+                skip_browser_sentinel=_skip_browser,
+                skip_sentinel_entirely=_skip_sentinel,
             )
             client._log = self._log
+
+            # Inject Cloudflare cookies from warmup
+            for name, value in cf_cookies.items():
+                try:
+                    client.session.cookies.set(name, value, domain="chatgpt.com", path="/")
+                    client.session.cookies.set(name, value, domain=".chatgpt.com", path="/")
+                    client.session.cookies.set(name, value, domain=".openai.com", path="/")
+                except Exception:
+                    pass
+            if cf_cookies:
+                self._log(
+                    "CF warmup cookies injected into session domains: chatgpt.com, .chatgpt.com, .openai.com"
+                )
 
             try:
                 success, message = client.register_complete_flow(
@@ -1397,7 +1607,7 @@ class RefreshTokenRegistrationEngine:
                 if not success:
                     if self._is_email_already_registered_error(message):
                         self._log(
-                            f"OpenAI提示该邮箱已有账号，直接切换到登录授权: {self.email}",
+                            f"OpenAI鎻愮ず璇ラ偖绠卞凡鏈夎处鍙凤紝鐩存帴鍒囨崲鍒扮櫥褰曟巿鏉? {self.email}",
                             "warning",
                         )
                         self._is_existing_account = True
@@ -1407,10 +1617,67 @@ class RefreshTokenRegistrationEngine:
                     if "409" in str(message) and "invalid session" in str(message).lower():
                         if attempt < 1:
                             self._log(
-                                f"验证码验证报 409 Invalid Session，自动使用同一邮箱重新走注册状态机 (尝试 {attempt+1}/2)...",
+                                f"OTP returned 409 Invalid Session, auto-retrying with same email via state machine (attempt {attempt+1}/2)...",
                                 "warning",
                             )
                             continue
+
+                    if self._is_consumer_homepage_bootstrap_error(message):
+                        if attempt < max_bootstrap_attempts - 1:
+                            rotated_proxy = self._try_rotate_proxy_on_fraud_guard()
+                            if rotated_proxy:
+                                self._log(
+                                    f"妫ｆ牠銆夋０鍕房閺夊啫銇戠拹銉礉瀹歌尪鐤嗛幑顫敩閻炲棗鑻熼柌宥呬粵 CF 妫板嫮鍎归崥搴ㄥ櫢鐠?({attempt + 1}/{max_bootstrap_attempts})",
+                                    "warning",
+                                )
+                                cf_cookies = {}
+                                try:
+                                    self._log("濞夈劌鍞介崜宀癋妫板嫮鍎? 濞村繗顫嶉崳銊問闂?https://chatgpt.com/ ...")
+                                    warmup_cookies = warmup_page_and_extract_cookies(
+                                        page_url="https://chatgpt.com/",
+                                        proxy=self.proxy_url,
+                                        timeout_ms=45000,
+                                        headless=True,
+                                        device_id=self._device_id,
+                                        log_fn=lambda msg: self._log(msg),
+                                        session_fp=self._session_fp,
+                                    )
+                                    if warmup_cookies:
+                                        for name in ("cf_clearance", "__cf_bm"):
+                                            if name in warmup_cookies:
+                                                cf_cookies[name] = warmup_cookies[name]
+                                    self._log(
+                                        f"濞夈劌鍞介崜宀癋妫板嫮鍎圭€瑰本鍨? cookies={len(warmup_cookies or [])}"
+                                        f", cf_clearance={'yes' if 'cf_clearance' in cf_cookies else 'no'}"
+                                        f", __cf_bm={'yes' if '__cf_bm' in cf_cookies else 'no'}"
+                                    )
+                                except Exception as e:
+                                    self._log(f"濞夈劌鍞介崜宀癋妫板嫮鍎瑰鍌氱埗: {e}", "warning")
+                                continue
+                            self._log("妫ｆ牠銆夋０鍕房閺夊啫銇戠拹銉礉娴狅絿鎮婃潪顔藉床娑撳秴褰查悽顭掔礉缂佹挻娼張顔跨枂", "warning")
+                    if self._is_account_creation_policy_error(message):
+                        if attempt < max_bootstrap_attempts - 1:
+                            strategy = "skip_sentinel" if not _skip_sentinel else "rotate_proxy"
+                            self._log(
+                                f"account creation policy rejected ({str(message)[:120]}), strategy={strategy}, attempt {attempt + 1}/{max_bootstrap_attempts}",
+                                "warning",
+                            )
+                            if strategy == "skip_sentinel":
+                                # First try same proxy without sentinel token (weak PoW sentinel may trigger detection)
+                                _skip_sentinel = True
+                                self._log("Next round will skip Sentinel token retry", "warning")
+                                continue
+                            # 鎹唬鐞嗛噸璇?
+                            rotated_proxy = self._try_rotate_proxy_on_fraud_guard()
+                            if rotated_proxy:
+                                _skip_sentinel = False  # new proxy restores sentinel
+                                continue
+                            # proxy rotation failed, try without sentinel
+                            if not _skip_sentinel:
+                                _skip_sentinel = True
+                                self._log("Proxy rotation not available, next round will skip Sentinel token retry", "warning")
+                                continue
+                            self._log("account creation policy rejected, all strategies exhausted", "warning")
 
                     return False, f"consumer_chatgpt_registration_failed: {message}"
                 break
@@ -1418,12 +1685,66 @@ class RefreshTokenRegistrationEngine:
                 self._used_verification_codes.update(email_adapter.used_codes)
                 if self._is_email_already_registered_error(exc):
                     self._log(
-                        f"OpenAI提示该邮箱已有账号，直接切换到登录授权: {self.email}",
+                        f"OpenAI鎻愮ず璇ラ偖绠卞凡鏈夎处鍙凤紝鐩存帴鍒囨崲鍒扮櫥褰曟巿鏉? {self.email}",
                         "warning",
                     )
                     self._is_existing_account = True
                     self._token_acquisition_requires_login = True
                     return True, ""
+                if self._is_consumer_homepage_bootstrap_error(exc):
+                    if attempt < max_bootstrap_attempts - 1:
+                        rotated_proxy = self._try_rotate_proxy_on_fraud_guard()
+                        if rotated_proxy:
+                            self._log(
+                                f"妫ｆ牠銆夋０鍕房閺夊啫绱撶敮闈╃礉瀹歌尪鐤嗛幑顫敩閻炲棗鑻熼柌宥呬粵 CF 妫板嫮鍎归崥搴ㄥ櫢鐠?({attempt + 1}/{max_bootstrap_attempts})",
+                                "warning",
+                            )
+                            cf_cookies = {}
+                            try:
+                                self._log("濞夈劌鍞介崜宀癋妫板嫮鍎? 濞村繗顫嶉崳銊問闂?https://chatgpt.com/ ...")
+                                warmup_cookies = warmup_page_and_extract_cookies(
+                                    page_url="https://chatgpt.com/",
+                                    proxy=self.proxy_url,
+                                    timeout_ms=45000,
+                                    headless=True,
+                                    device_id=self._device_id,
+                                    log_fn=lambda msg: self._log(msg),
+                                    session_fp=self._session_fp,
+                                )
+                                if warmup_cookies:
+                                    for name in ("cf_clearance", "__cf_bm"):
+                                        if name in warmup_cookies:
+                                            cf_cookies[name] = warmup_cookies[name]
+                                self._log(
+                                    f"濞夈劌鍞介崜宀癋妫板嫮鍎圭€瑰本鍨? cookies={len(warmup_cookies or [])}"
+                                    f", cf_clearance={'yes' if 'cf_clearance' in cf_cookies else 'no'}"
+                                    f", __cf_bm={'yes' if '__cf_bm' in cf_cookies else 'no'}"
+                                )
+                            except Exception as e:
+                                self._log(f"濞夈劌鍞介崜宀癋妫板嫮鍎瑰鍌氱埗: {e}", "warning")
+                            continue
+                        self._log("妫ｆ牠銆夋０鍕房閺夊啫绱撶敮闈╃礉娴狅絿鎮婃潪顔藉床娑撳秴褰查悽顭掔礉缂佹挻娼張顔跨枂", "warning")
+
+                if self._is_account_creation_policy_error(exc):
+                    if attempt < max_bootstrap_attempts - 1:
+                        strategy = "skip_sentinel" if not _skip_sentinel else "rotate_proxy"
+                        self._log(
+                            f"account creation policy rejected via exception ({str(exc)[:120]}), strategy={strategy}, attempt {attempt + 1}/{max_bootstrap_attempts}",
+                            "warning",
+                        )
+                        if strategy == "skip_sentinel":
+                            _skip_sentinel = True
+                            self._log("Next round will skip Sentinel token retry", "warning")
+                            continue
+                        rotated_proxy = self._try_rotate_proxy_on_fraud_guard()
+                        if rotated_proxy:
+                            _skip_sentinel = False
+                            continue
+                        if not _skip_sentinel:
+                            _skip_sentinel = True
+                            self._log("Proxy rotation not available, next round will skip Sentinel token retry", "warning")
+                            continue
+                        self._log("account creation policy rejected via exception, all strategies exhausted", "warning")
                 return False, f"consumer_chatgpt_registration_failed: {exc}"
 
         self._adopt_consumer_registration_state(client)
@@ -1441,17 +1762,17 @@ class RefreshTokenRegistrationEngine:
             result.session_token = session_token
             self.session_token = session_token
 
-        # ⭐ before_oauth (Plus OAuth 前升级) 模式必须在 hook 调用前先 reuse session 落地 access_token，
-        # 否则 _run_pre_oauth_auto_pay_hook 拿到的 access_token/session_token 都是 no，
-        # 直接 skipped_pre_oauth_missing_auth → fall through OAuth → 走 add-phone 命中 fraud_guard。
-        # 该方法此前定义但无人调用，导致 GoPay/PayPal 的 before_oauth 路径无效。
+        # 猸?before_oauth (Plus OAuth 鍓嶅崌绾? 妯″紡蹇呴』鍦?hook 璋冪敤鍓嶅厛 reuse session 钀藉湴 access_token锛?
+        # Otherwise access_token/session_token from _run_pre_oauth_auto_pay_hook are all None
+        # 鐩存帴 skipped_pre_oauth_missing_auth 鈫?fall through OAuth 鈫?璧?add-phone 鍛戒腑 fraud_guard銆?
+        # 璇ユ柟娉曟鍓嶅畾涔変絾鏃犱汉璋冪敤锛屽鑷?GoPay/PayPal 鐨?before_oauth 璺緞鏃犳晥銆?
         if callable(self._pre_oauth_auto_pay_hook):
             try:
                 self._prepare_pre_oauth_payment_auth(client, result)
             except Exception as exc:
-                self._log(f"OAuth 前支付 session 落地异常（不阻断后续流程）: {exc}", "warning")
+                self._log(f"Pre-OAuth payment session landing anomaly (non-blocking): {exc}", "warning")
 
-        self._log("普通 ChatGPT 网页注册阶段完成，开始进入 OAuth 登录授权取 Token")
+        self._log("ChatGPT web registration phase complete, proceeding to OAuth login for refresh_token")
         return True, ""
 
         client = OAuthPkceClient(
@@ -1486,7 +1807,7 @@ class RefreshTokenRegistrationEngine:
             self.session = getattr(client, "session", None)
             self._device_id = str(getattr(client, "_device_id", "") or "").strip() or self._device_id
             browser_otp_result, browser_otp_response_data = self._submit_browser_form(
-                label="基础账号 OTP 校验",
+                label="鍩虹璐﹀彿 OTP 鏍￠獙",
                 page_url="https://auth.openai.com/email-verification",
                 form_type="otp_validate",
                 form_value=otp_code,
@@ -1501,7 +1822,7 @@ class RefreshTokenRegistrationEngine:
             self._used_verification_codes.update(email_adapter.used_codes)
             if self._is_email_already_registered_error(exc):
                 self._log(
-                    f"OpenAI 提示该邮箱已有账号，直接切换到登录授权: {self.email}",
+                    f"OpenAI 鎻愮ず璇ラ偖绠卞凡鏈夎处鍙凤紝鐩存帴鍒囨崲鍒扮櫥褰曟巿鏉? {self.email}",
                     "warning",
                 )
                 self._is_existing_account = True
@@ -1522,7 +1843,7 @@ class RefreshTokenRegistrationEngine:
         )
         if normalized_post_otp_page_type == "add_phone":
             self._log(
-                "基础账号模式 OTP 后不应进入 add-phone，改回 about-you 继续完成姓名/生日资料创建",
+                "Base account mode: redirected from add-phone to about-you to complete name/birthdate creation",
                 "warning",
             )
             normalized_post_otp_page_type = "about_you"
@@ -1550,7 +1871,7 @@ class RefreshTokenRegistrationEngine:
         if not self._complete_post_otp_flow(result, exchange_token=False):
             return False, result.error_message or "consumer_chatgpt_registration_failed: about_you_not_completed"
 
-        self._log("普通 ChatGPT 网页注册阶段完成，开始进入 OAuth 登录授权取 Token")
+        self._log("ChatGPT web registration phase complete, proceeding to OAuth login for refresh_token")
         return True, ""
 
     def _prepare_pre_oauth_payment_auth(self, client: Any, result: RegistrationResult) -> None:
@@ -1558,11 +1879,11 @@ class RefreshTokenRegistrationEngine:
         try:
             ok, payload = client.reuse_session_and_get_tokens()
         except Exception as exc:
-            self._log(f"基础账号支付会话准备异常，稍后将跳过 OAuth 前支付: {exc}", "warning")
+            self._log(f"Base account payment session preparation exception, will skip pre-OAuth payment: {exc}", "warning")
             return
 
         if not ok:
-            self._log(f"基础账号支付会话准备失败，稍后将跳过 OAuth 前支付: {payload}", "warning")
+            self._log(f"鍩虹璐﹀彿鏀粯浼氳瘽鍑嗗澶辫触锛岀◢鍚庡皢璺宠繃 OAuth 鍓嶆敮浠? {payload}", "warning")
             return
 
         data = payload if isinstance(payload, dict) else {}
@@ -1574,35 +1895,35 @@ class RefreshTokenRegistrationEngine:
             self.session_token = result.session_token
         self._adopt_consumer_registration_state(client)
         if result.access_token:
-            self._log("基础账号 ChatGPT session 已落地，可用于 OAuth 前 Plus 支付")
+            self._log("鍩虹璐﹀彿 ChatGPT session 宸茶惤鍦帮紝鍙敤浜?OAuth 鍓?Plus 鏀粯")
         else:
-            self._log("基础账号 ChatGPT session 已落地，但未取到 access_token", "warning")
+            self._log("鍩虹璐﹀彿 ChatGPT session 宸茶惤鍦帮紝浣嗘湭鍙栧埌 access_token", "warning")
 
     def _complete_token_exchange(self, result: RegistrationResult) -> bool:
-        """鍦ㄧ櫥褰曟€佸凡寤虹珛鍚庯紝缁х画瀹屾垚 workspace 鍜?OAuth token 鑾峰彇銆?"""
+        """Complete login-stage OTP validation and continue to OAuth token exchange."""
         if getattr(self, "_post_otp_page_type", "") == "add_phone":
-            self._log("当前流程已直达 add-phone，无需等待登录验证码，直接进入手机验证阶段...")
+            self._log("Current flow has reached add-phone directly, no need to wait for login OTP, entering phone verification stage...")
             return self._complete_post_otp_flow(result)
 
-        self._log("等待登录验证码...")
+        self._log("Waiting for login OTP...")
         code = self._get_verification_code()
         if not code:
             result.error_message = "等待登录验证码失败"
             return False
 
-        self._log("校验登录验证码...")
+        self._log("Verifying login OTP...")
         if not self._validate_verification_code(code):
-            result.error_message = "校验登录验证码失败"
+            result.error_message = "验证登录验证码失败"
             return False
 
         return self._complete_post_otp_flow(result)
 
     def _complete_token_exchange_from_current_session(self, result: RegistrationResult) -> bool:
-        """Try Codex OAuth with the just-created consumer session before relogin."""
+        """Continue the login authorization chain on the current consumer session."""
         if not self.session:
             return False
 
-        self._log("尝试复用普通注册会话直接进入 OAuth 授权取 Token...")
+        self._log("?????????????? OAuth ??? Token...")
         self._token_acquisition_requires_login = True
 
         try:
@@ -1615,49 +1936,62 @@ class RefreshTokenRegistrationEngine:
             if workspace_id:
                 result.workspace_id = workspace_id
 
-            # ⭐ 个人 ChatGPT 账号本身没有 workspace（workspace 只存在于 team/enterprise）。
-            # HTTP consent 拿不到 callback 时，再用浏览器前端（若已就绪）重试一次，
-            # 避免每次都 blind 回退到重新登录授权流程。
             if not callback_url:
                 start_url = self.oauth_start.auth_url if self.oauth_start else ""
                 if self._has_browser_frontend_state():
-                    self._log("复用会话 HTTP 路径未拿到 callback，尝试浏览器 consent 直取 callback...", "warning")
+                    self._log("???? HTTP ????? callback?????? consent ?? callback...", "warning")
                     try:
                         direct_callback = self._resolve_oauth_callback_via_browser(
                             workspace_id or "",
                             start_url,
                         )
                         if direct_callback:
-                            self._log(f"✅ 复用会话浏览器路径拿到 OAuth callback: {direct_callback[:100]}...")
+                            self._log(f"? ??????????? OAuth callback: {direct_callback[:100]}...")
                             callback_url = direct_callback
                     except Exception as e:
-                        self._log(f"复用会话浏览器 consent 尝试异常: {e}", "warning")
+                        self._log(f"HTTP consent callback attempt failed: {e}", "warning")
 
             if not callback_url:
-                # add-phone 阻塞了 consent 流程，直接走手机验证拿 refresh_token
-                self._log("复用会话未拿到 callback（add-phone 阻塞），直接走手机验证...", "warning")
-                self._post_otp_page_type = "add_phone"
                 start_url = self.oauth_start.auth_url if self.oauth_start else ""
-                phone_ok = self._handle_phone_verification()
-                if phone_ok:
-                    self._log("手机验证通过，重新尝试获取 OAuth callback...")
-                    retry_callback, retry_ws = self._resolve_oauth_callback_url(
-                        self.oauth_start.auth_url if self.oauth_start else ""
-                    )
-                    if not retry_callback and self._has_browser_frontend_state():
-                        retry_callback = self._resolve_oauth_callback_via_browser(
-                            retry_ws or workspace_id or "", start_url
+                terminal_state = self._resolve_oauth_terminal_state(start_url)
+                terminal_page_type = str(terminal_state.page_type or "").strip().lower()
+                terminal_url = normalize_flow_url(
+                    str(terminal_state.current_url or start_url or "").strip(),
+                    auth_base="https://auth.openai.com",
+                )
+
+                if terminal_page_type == "add_phone":
+                    self._log("OAuth callback unresolved and flow reached add-phone, starting phone verification...", "warning")
+                    self._post_otp_page_type = "add_phone"
+                    self._post_otp_continue_url = terminal_url or "https://auth.openai.com/add-phone"
+                    phone_ok = self._handle_phone_verification()
+                    if phone_ok:
+                        self._log("Phone verification passed, retrying OAuth callback resolution...")
+                        retry_callback, retry_ws = self._resolve_oauth_callback_url(
+                            self.oauth_start.auth_url if self.oauth_start else ""
                         )
-                    if retry_callback:
-                        callback_url = retry_callback
-                        self._log(f"✅ 手机验证后成功拿到 callback")
+                        if retry_ws:
+                            workspace_id = retry_ws
+                        if not retry_callback and self._has_browser_frontend_state():
+                            retry_callback = self._resolve_oauth_callback_via_browser(
+                                retry_ws or workspace_id or "", start_url
+                            )
+                        if retry_callback:
+                            callback_url = retry_callback
+                            self._log("OAuth callback resolved after phone verification")
+                        else:
+                            self._log("Still unable to resolve OAuth callback after phone verification", "warning")
+                            return False
                     else:
-                        self._log("手机验证后仍未拿到 callback", "warning")
+                        self._log("Phone verification failed", "warning")
+                        self._oauth_blocked_by_phone = True
                         return False
                 else:
-                    self._log("手机验证也失败", "warning")
-                    # 根据最新需求，遇到addphone问题失败后，不再尝试用全新会话重试登录
-                    self._oauth_blocked_by_phone = True
+                    self._log(
+                        f"OAuth callback unresolved and terminal page is {terminal_page_type or 'unknown'} "
+                        f"({terminal_url[:120] if terminal_url else '-'}); cannot continue OAuth flow",
+                        "warning",
+                    )
                     return False
 
             token_info = self._handle_oauth_callback(callback_url)
@@ -1668,7 +2002,7 @@ class RefreshTokenRegistrationEngine:
                 result.source = "register"
                 if not result.workspace_id:
                     result.workspace_id = workspace_id or self._get_workspace_id() or ""
-                self._log("复用普通注册会话已完成 OAuth token 交换")
+                self._log("Successfully obtained OAuth token")
                 return True
 
             session_cookie = self.session.cookies.get("__Secure-next-auth.session-token")
@@ -1676,10 +2010,10 @@ class RefreshTokenRegistrationEngine:
                 self.session_token = session_cookie
                 result.session_token = session_cookie
                 result.source = "register"
-                self._log("复用普通注册会话未换到 OAuth token，但已获取 Session Token", "warning")
+                self._log("OAuth token unavailable, but Session Token was obtained", "warning")
                 return True
         except Exception as e:
-            self._log(f"复用普通注册会话获取 Token 失败: {e}", "warning")
+            self._log(f"Exception while obtaining Token: {e}", "warning")
 
         return False
 
@@ -1689,10 +2023,9 @@ class RefreshTokenRegistrationEngine:
         *,
         exchange_token: bool = True,
     ) -> bool:
-        """鍦?OTP 宸叉牎楠岄€氳繃鍚庯紝缁х画澶勭悊 add_phone/about_you/workspace/OAuth 娴佺▼銆?"""
+        """Continue from post-OTP state through add_phone/about_you/workspace/OAuth."""
 
-        # 妫€鏌ユ槸鍚﹁繘鍏?add_phone 椤甸潰锛堥渶瑕佹墜鏈哄彿楠岃瘉锛?
-        # 灏濊瘯澶氱鏂规硶缁曡繃 add_phone 椤甸潰
+        # If post-OTP flow lands on add-phone, run phone verification first.
         post_page_type = getattr(self, "_post_otp_page_type", "") or ""
         started_from_add_phone = post_page_type.lower() == "add_phone"
         phone_verification_attempted = False
@@ -1704,7 +2037,7 @@ class RefreshTokenRegistrationEngine:
             self._oauth_blocked_by_phone = True
             phone_reason = str(getattr(self, "_last_phone_failure_reason", "") or "").strip()
             if phone_reason == "no_numbers":
-                phone_hint = "5) SMSBOWER 当前筛选条件无可用号码，请更换国家、放宽 max_price 或调整 provider/quality"
+                phone_hint = "5) SMSBOWER 当前筛选条件下无可用号码，请更换国家、放宽 max_price 或调整 provider/quality"
             elif phone_reason == "low_balance":
                 phone_hint = "5) SMSBOWER 余额不足，请充值后重试"
             elif phone_reason == "missing_key":
@@ -1713,21 +2046,23 @@ class RefreshTokenRegistrationEngine:
                 phone_hint = "5) 手机号提交被 Cloudflare 拦截，请更换住宅代理或等待 IP 冷却"
             elif phone_reason == "environment_unusable_fraud_guard":
                 phone_hint = "5) 当前 add-phone 环境连续触发 fraud_guard，已止损；这不是接码失败，请先暂停该账号/环境"
+            elif phone_reason == "session_invalid_state":
+                phone_hint = "5) OpenAI 返回 invalid_state（会话状态失效），请重建授权会话后再继续，不要继续重发 OTP"
             elif phone_reason == "add_phone_attempt_limit":
-                phone_hint = "5) 当前账号 add-phone 尝试次数已达硬上限，已停止继续买号，避免账户级风控加重"
+                phone_hint = "5) 当前账号 add-phone 尝试次数已达上限，已停止继续买号"
             elif phone_reason in {"phone_rate_limited", "phone_rejected", "voip_phone_disallowed", "landline_disallowed", "phone_number_in_use"}:
-                phone_hint = "5) OpenAI 已拒绝手机号提交，属于号码质量/账号环境问题，不是 SMS 轮询收不到码"
+                phone_hint = "5) OpenAI 已拒绝手机号提交，属于号段质量或账号环境问题，不是短信轮询收不到码"
             else:
                 phone_hint = "5) 检查 SMSBOWER 号码可用性、价格和 provider/quality 配置"
             result.error_message = (
-                f"{flow_stage_label}失败，OpenAI 要求绑定手机号。建议："
+                f"{flow_stage_label}失败(add_phone)：OpenAI 要求绑定手机号。建议："
                 "1) 更换住宅代理 IP；2) 更换邮箱域名；3) 降低注册频率；"
                 "4) 尝试不同时间段注册；"
                 f"{phone_hint}"
             )
             return False
 
-        def _finalize_post_phone_oauth_failure(reason: str):
+        def _finalize_post_phone_oauth_failure(reason: str) -> bool:
             result.error_message = (
                 f"{flow_stage_label}失败：手机号已验证通过，但 OAuth/workspace 授权未完成"
                 f"（{reason}）。建议：1) 更换住宅代理 IP；2) 降低注册频率；"
@@ -1755,7 +2090,7 @@ class RefreshTokenRegistrationEngine:
             self._log(f"{flow_stage_label}阶段遇到 add-phone，直接进入手机验证阶段...", "warning")
             if not exchange_token:
                 self._log(
-                    "当前尚未进入 about-you，姓名/生日资料尚未创建；先处理手机验证，再继续后续流程",
+                    "Not yet reached about-you, name/birthdate profile not yet created; handle phone verification first, then continue",
                     "info",
                 )
             phone_verification_attempted = True
@@ -1777,7 +2112,7 @@ class RefreshTokenRegistrationEngine:
                 else:
                     return _finalize_phone_failure()
         
-        # 妫€鏌ユ槸鍚﹁繘鍏?about_you 椤甸潰锛堥渶瑕佸畬鎴愮敤鎴蜂俊鎭缃級
+        # 濡偓閺屻儲妲搁崥锕佺箻閸?about_you 妞ょ敻娼伴敍鍫ユ付鐟曚礁鐣幋鎰暏閹磋渹淇婇幁缂冪礆
         post_page_type = getattr(self, "_post_otp_page_type", "") or ""
         if post_page_type.lower() == "about_you":
             created_continue_url = self._create_account_during_oauth_if_needed()
@@ -1802,7 +2137,7 @@ class RefreshTokenRegistrationEngine:
                 self._log("about-you create_account returned no continue_url, fallback to page visit", "warning")
 
         if post_page_type.lower() == "about_you":
-            self._log("验证码校验后进入 about-you 页面，访问页面以完成 Cookie 设置...", "info")
+            self._log("OTP verified, reached about-you page, visiting page to complete cookie setup...", "info")
             try:
                 about_you_url = "https://auth.openai.com/about-you"
                 nav_headers = self._build_navigation_headers(referer=about_you_url)
@@ -1812,11 +2147,11 @@ class RefreshTokenRegistrationEngine:
                     allow_redirects=True,
                     timeout=30,
                 )
-                self._log(f"访问 about-you 页面状态: {page_resp.status_code}")
-                # 绛夊緟椤甸潰瀹屾垚 Cookie 璁剧疆
+                self._log(f"Visited about-you page status: {page_resp.status_code}")
+                # 缁涘绶熸い鐢告桨鐎瑰本鍨?Cookie 鐠佸墽鐤?
                 self._behavior_sim.natural_delay(2.0, 4.0)
                 
-                # 妫€鏌ラ噸瀹氬悜鍚庣殑 URL锛岀湅鏄惁宸茬粡璺宠浆鍒?consent 鎴栧叾浠栭〉闈?
+                # 濡偓閺屻儵鍣哥€规艾鎮滈崥搴ｆ畱 URL閿涘瞼婀呴弰鎯佸鑼病鐠哄疇娴嗛崚?consent 閹存牕鍙炬禒鏍€夐棃?
                 final_url = normalize_flow_url(
                     str(page_resp.url or ""),
                     auth_base="https://auth.openai.com",
@@ -1833,19 +2168,19 @@ class RefreshTokenRegistrationEngine:
                     "oauth_callback",
                     "callback",
                 }:
-                    self._log(f"about-you 页面已重定向到: {final_url[:100]}...")
+                    self._log(f"about-you page redirected to: {final_url[:100]}...")
                     self._post_otp_continue_url = final_url
                     self._post_otp_page_type = final_page_type
                 else:
-                    self._log("about-you 页面访问完成，Cookie 已更新")
+                    self._log("about-you page visit complete, cookies updated")
             except Exception as e:
-                self._log(f"访问 about-you 页面异常: {e}", "warning")
+                self._log(f"Exception visiting about-you page: {e}", "warning")
 
         post_page_type = getattr(self, "_post_otp_page_type", "") or ""
         if post_page_type.lower() == "about_you":
             if self._about_you_create_account_already_exists_without_consent:
                 self._log(
-                    f"OpenAI 提示该邮箱已有账号，基础账号已存在，直接切换到登录授权: {self.email}",
+                    f"OpenAI 鎻愮ず璇ラ偖绠卞凡鏈夎处鍙凤紝鍩虹璐﹀彿宸插瓨鍦紝鐩存帴鍒囨崲鍒扮櫥褰曟巿鏉? {self.email}",
                     "warning",
                 )
                 self._is_existing_account = True
@@ -1854,7 +2189,7 @@ class RefreshTokenRegistrationEngine:
             else:
                 result.error_message = (
                     "about-you create_account did not reach OAuth callback; "
-                    "OpenAI 上游没有返回 consent/workspace/callback，当前无法拿到 token"
+                    "OpenAI did not return consent/workspace/callback upstream, currently unable to get token"
                 )
                 self._log(result.error_message, "error")
                 return False
@@ -1873,7 +2208,7 @@ class RefreshTokenRegistrationEngine:
                 self._log(identity_error, "error")
                 return False
         while True:
-            self._log("获取 Workspace ID...")
+            self._log("Getting Workspace ID...")
             workspace_id = self._get_workspace_id()
 
             if (
@@ -1886,58 +2221,58 @@ class RefreshTokenRegistrationEngine:
                 if context_bootstrap_succeeded:
                     continue
             
-            # 濡傛灉浠?cookie 涓幏鍙栧け璐ワ紝灏濊瘯閫氳繃 API 鑾峰彇
+            # 婵″倹鐏夋禒?cookie 娑撳箯閸欐牕銇戠拹銉礉鐏忔繆鐦柅姘崇箖 API 閼惧嘲褰?
             if not workspace_id:
-                self._log("尝试通过 API 获取 Workspace ID...", "warning")
+                self._log("Attempting to get Workspace ID via API...", "warning")
                 workspace_id = self._get_workspace_id_from_api()
 
             if not workspace_id:
-                self._log("尝试从 consent 页面 HTML 提取 Workspace ID...", "warning")
+                self._log("Attempting to extract Workspace ID from consent page HTML...", "warning")
                 workspace_id = self._get_workspace_id_from_consent_html(
                     self._resolve_post_otp_continue_url()
                 )
             
-            # ⭐ 个人 ChatGPT 账号本来就没 workspace（workspace 只存在于 team/enterprise）
-            # 在回退接码前，先尝试"无 workspace 直接走 consent callback"
-            # 很多个人账号的 consent URL 会直接重定向到 callback URL，不需要选 workspace
+            # Personal ChatGPT accounts do not have workspace (workspace only exists for team/enterprise)
+            # 鍦ㄥ洖閫€鎺ョ爜鍓嶏紝鍏堝皾璇?鏃?workspace 鐩存帴璧?consent callback"
+            # Many personal account consent URLs redirect directly to callback URL, no workspace needed
             if (
                 not workspace_id
                 and exchange_token
                 and not (started_from_add_phone and phone_verification_succeeded)
             ):
-                self._log("个人账号可能无 workspace，尝试直接从 consent URL 获取 OAuth callback...", "warning")
+                self._log("Personal account may not have workspace, trying to get OAuth callback directly from consent URL...", "warning")
                 try:
                     direct_callback = self._resolve_oauth_callback_via_browser(
-                        "",  # 空 workspace_id
+                        "",  # 绌?workspace_id
                         self._resolve_post_otp_continue_url(),
                     )
                     if direct_callback:
-                        self._log(f"✅ 无 workspace 直接拿到 OAuth callback: {direct_callback[:100]}...")
+                        self._log(f"Got OAuth callback directly (no workspace): {direct_callback[:100]}...")
                         callback_url = direct_callback
-                        result.workspace_id = ""  # 个人账号无 workspace
-                        break  # 跳出 while 循环，直接走 _handle_oauth_callback
+                        result.workspace_id = ""  # personal account has no workspace
+                        break  # 璺冲嚭 while 寰幆锛岀洿鎺ヨ蛋 _handle_oauth_callback
                 except Exception as e:
-                    self._log(f"无 workspace callback 尝试异常: {e}", "warning")
-                # 再试一次用 session 直接 HTTP 请求 consent URL
+                    self._log(f"Workspace callback attempt exception: {e}", "warning")
+                # 鍐嶈瘯涓€娆＄敤 session 鐩存帴 HTTP 璇锋眰 consent URL
                 try:
                     callback_url, _ws = self._resolve_oauth_callback_url(
                         self._resolve_post_otp_continue_url()
                     )
                     if callback_url:
-                        self._log(f"✅ 无 workspace 通过 HTTP consent 拿到 callback: {callback_url[:100]}...")
+                        self._log(f"Got callback via HTTP consent (no workspace): {callback_url[:100]}...")
                         result.workspace_id = ""
                         break
                 except Exception as e:
-                    self._log(f"HTTP consent callback 尝试异常: {e}", "warning")
-                # 若 exchange_token=False（基础账号模式），无 workspace 也算成功
-                # 因为 free 账号在后续会用重新登录拿 token
+                    self._log(f"HTTP consent callback exception: {e}", "warning")
+                # 鑻?exchange_token=False锛堝熀纭€璐﹀彿妯″紡锛夛紝鏃?workspace 涔熺畻鎴愬姛
+                # 鍥犱负 free 璐﹀彿鍦ㄥ悗缁細鐢ㄩ噸鏂扮櫥褰曟嬁 token
             elif not workspace_id and not exchange_token:
-                self._log("基础账号模式（exchange_token=False），个人账号无 workspace 属正常，继续")
+                self._log("Basic account mode (exchange_token=False), personal account without workspace is normal, continuing")
                 result.workspace_id = ""
                 return True
 
             if not workspace_id and not callback_url:
-                if _fallback_to_phone("绕过 add-phone 后仍无法获取 Workspace ID"):
+                if _fallback_to_phone("Still unable to get Workspace ID after bypassing add-phone"):
                     continue
                 if _phone_attempt_failed():
                     return _finalize_phone_failure()
@@ -1947,7 +2282,7 @@ class RefreshTokenRegistrationEngine:
                     and not post_phone_context_refresh_attempted
                 ):
                     post_phone_context_refresh_attempted = True
-                    self._log("手机验证已通过，等待授权上下文刷新后重试获取 Workspace ID...", "warning")
+                    self._log("Phone verification passed, waiting for auth context refresh before retrying Workspace ID...", "warning")
                     continue
                 if started_from_add_phone and phone_verification_succeeded:
                     return _finalize_post_phone_oauth_failure("OAuth callback blocked")
@@ -1961,12 +2296,12 @@ class RefreshTokenRegistrationEngine:
                     result.error_message = self._build_unbootstrapped_account_error()
                     self._log(result.error_message, "error")
                     return False
-                result.error_message = "获取 Workspace ID 失败"
+                result.error_message = "Failed to get Workspace ID"
                 return False
 
             result.workspace_id = workspace_id
             if not exchange_token:
-                self._log("基础账号 workspace 上下文已就绪，延后到重新登录授权阶段获取 Token")
+                self._log("Base account workspace context ready, deferring to re-login auth stage to get Token")
                 return True
 
             callback_url = self._resolve_oauth_callback_via_browser(
@@ -1974,53 +2309,53 @@ class RefreshTokenRegistrationEngine:
                 self._resolve_post_otp_continue_url(),
             )
             if not callback_url:
-                self._log("选择 Workspace...")
+                self._log("閫夋嫨 Workspace...")
                 continue_url = self._select_workspace(workspace_id)
                 if not continue_url:
-                    if _fallback_to_phone("绕过 add-phone 后选择 Workspace 失败"):
+                    if _fallback_to_phone("缁曡繃 add-phone 鍚庨€夋嫨 Workspace 澶辫触"):
                         continue
                     if _phone_attempt_failed():
                         return _finalize_phone_failure()
                     if started_from_add_phone and phone_verification_succeeded:
                         return _finalize_post_phone_oauth_failure("workspace select failed")
-                    result.error_message = "选择 Workspace 失败"
+                    result.error_message = "閫夋嫨 Workspace 澶辫触"
                     return False
 
-                self._log("跟随重定向链...")
+                self._log("璺熼殢閲嶅畾鍚戦摼...")
                 callback_url = self._follow_redirects(continue_url)
             if not callback_url:
-                if _fallback_to_phone("缁曡繃 add-phone 鍚庤窡闅忛噸瀹氬悜閾惧け璐?"):
+                if _fallback_to_phone("缂佹洝绻?add-phone 閸氬氦绐￠梾蹇涘櫢鐎规艾鎮滈柧鎯с亼鐠?"):
                     continue
                 if _phone_attempt_failed():
                     return _finalize_phone_failure()
                 if started_from_add_phone and phone_verification_succeeded:
                     return _finalize_post_phone_oauth_failure("OAuth callback blocked")
-                result.error_message = "跟随重定向链失败"
+                result.error_message = "璺熼殢閲嶅畾鍚戦摼澶辫触"
                 return False
             break
 
-        self._log("处理 OAuth 回调并获取 Token...")
+        self._log("Processing OAuth callback and getting Token...")
         token_info = self._handle_oauth_callback(callback_url)
         
-        # 浼樺厛灏濊瘯浠?OAuth 鍥炶皟鑾峰彇 token 淇℃伅
+        # 娴兼ê鍘涚亸婵婄槸娴?OAuth 閸ョ偠鐨熼懢宄板絿 token 娣団剝浼?
         if token_info:
             result.account_id = token_info.get("account_id", "")
             result.access_token = token_info.get("access_token", "")
             result.refresh_token = token_info.get("refresh_token", "")
             result.id_token = token_info.get("id_token", "")
             result.source = "login" if self._is_existing_account else "register"
-            self._log("OAuth 回调处理成功")
+            self._log("OAuth callback processed successfully")
         else:
-            # OAuth token 浜ゆ崲澶辫触鏃讹紝璁板綍璀﹀憡浣嗙户缁皾璇曟彁鍙?session token
-            self._log("OAuth token 交换失败，尝试从 Session Cookie 提取令牌...", "warning")
+            # OAuth token 娴溿倖宕叉径杈Е閺冭绱濈拋鏉跨秿鐠€锕€鎲℃担鍡欐埛缂佺毦鐠囨洘褰侀崣?session token
+            self._log("OAuth token 浜ゆ崲澶辫触锛屽皾璇曚粠 Session Cookie 鎻愬彇浠ょ墝...", "warning")
             result.source = "login" if self._is_existing_account else "register"
 
-        # 灏濊瘯浠?session cookie 鎻愬彇 session token锛堝嵆浣?OAuth 澶辫触涔彲鑳芥垚鍔燂級
+        # 鐏忔繆鐦禒?session cookie 閹绘劕褰?session token閿涘牆宓嗘担?OAuth 婢惰精瑙︽稊褰查懗鑺ュ灇閸旂噦绱?
         session_cookie = self.session.cookies.get("__Secure-next-auth.session-token")
         if session_cookie:
             self.session_token = session_cookie
             result.session_token = session_cookie
-            self._log("成功获取 Session Token")
+            self._log("Successfully obtained Session Token")
             if not (result.refresh_token and result.id_token):
                 result.error_message = (
                     "refresh-token mode requires real OAuth credentials: "
@@ -2030,56 +2365,56 @@ class RefreshTokenRegistrationEngine:
                 return False
             return True
         else:
-            # 娌℃湁 session token 涓?OAuth 涔熷け璐ワ紝鎵嶈涓烘敞鍐屽け璐?
+            # 濞屸剝婀?session token 娑?OAuth 娑旂喎銇戠拹銉礉閹靛秷娑撶儤鏁為崘灞姐亼鐠?
             if not token_info:
-                result.error_message = "处理 OAuth 回调失败且未获取到 Session Token"
+                result.error_message = "OAuth callback processing failed and no Session Token obtained"
                 return False
 
         result.password = self.password or ""
         return True
 
     def _restart_login_flow(self) -> Tuple[bool, str]:
-        """鏂版敞鍐岃处鍙峰畬鎴愬缓鍙峰悗锛岄噸鏂板彂璧蜂竴娆＄櫥褰曟祦绋嬫嬁 token銆?"""
+        """Restart login flow after basic account creation to obtain OAuth tokens."""
         self._token_acquisition_requires_login = True
         self._relogin_requires_email_otp = True
         self._log("注册完成，开始重新登录以获取 Token...")
         self._reset_auth_flow()
 
-        did, sen_token = self._prepare_authorize_flow("重新登录")
+        did, sen_token = self._prepare_authorize_flow("Re-login")
         if not did:
-            return False, "重新登录时获取 Device ID 失败"
+            return False, "Failed to get Device ID during re-login"
         if not sen_token:
-            return False, "重新登录时 Sentinel POW 验证失败"
+            return False, "Sentinel POW verification failed during re-login"
 
         login_start_result = self._submit_login_start(did, sen_token)
         if not login_start_result.success:
-            return False, f"重新登录提交邮箱失败: {login_start_result.error_message}"
+            return False, f"Re-login email submit failed: {login_start_result.error_message}"
         if login_start_result.page_type == OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]:
             self._relogin_requires_email_otp = True
             self._post_otp_page_type = OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]
-            self._log("重新登录已直接进入邮箱验证码页面，等待系统发送验证码")
+            self._log("Re-login was taken directly to email OTP page, waiting for system to send OTP")
             return True, ""
         if login_start_result.page_type != OPENAI_PAGE_TYPES["LOGIN_PASSWORD"]:
-            return False, f"重新登录未进入密码页面: {login_start_result.page_type or 'unknown'}"
+            return False, f"Re-login did not reach password page: {login_start_result.page_type or 'unknown'}"
 
         password_result = self._submit_login_password()
         if not password_result.success:
-            return False, f"重新登录提交密码失败: {password_result.error_message}"
+            return False, f"Re-login password submit failed: {password_result.error_message}"
         if password_result.is_existing_account:
             self._relogin_requires_email_otp = True
             self._post_otp_page_type = OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]
-            self._log("重新登录密码后进入邮箱 OTP，继续等待本轮验证码")
+            self._log("Re-login after password entered email OTP, continuing to wait for current round OTP")
             return True, ""
-        # 本账号在 reuse-session 阶段已通过邮箱 OTP，密码登录后 OpenAI 直接跳 add_phone；
-        # 这属于正常流程（OTP 无需二次校验），设置 post_otp_page_type 让 _complete_token_exchange
-        # 直接接管手机验证，而不是把 add_phone 当作"登录未进入验证码页面"误判为失败。
+        # Account already passed email OTP in reuse-session stage; after password login OpenAI goes directly to add_phone.
+        # This is normal flow (OTP doesn't need re-verification), set post_otp_page_type for _complete_token_exchange
+        # to handle phone verification directly, rather than misdiagnosing add_phone as "login didn't reach OTP page" failure.
         password_page_type = str(password_result.page_type or "").lower()
         if password_page_type == "add_phone":
             self._relogin_requires_email_otp = False
             self._post_otp_page_type = "add_phone"
-            self._log("重新登录已跳过邮箱 OTP 直达 add-phone，进入手机验证阶段", "warning")
+            self._log("Re-login skipped email OTP, reached add-phone directly, entering phone verification stage", "warning")
             return True, ""
-        return False, f"重新登录未进入验证码页面: {password_result.page_type or 'unknown'}"
+        return False, f"Re-login did not reach OTP page: {password_result.page_type or 'unknown'}"
 
     def _check_sentinel(self, did: str, *, flow: str = "authorize_continue") -> Optional[str]:
         """Prefer browser-observed Sentinel, but do not merge detached browser cookies into the HTTP session."""
@@ -2121,48 +2456,48 @@ class RefreshTokenRegistrationEngine:
             return None
 
     def _mark_email_as_registered(self):
-        """鏍囪閭涓哄凡娉ㄥ唽鐘舵€侊紙鐢ㄤ簬闃叉閲嶅灏濊瘯锛?"""
+        """Mark the current email as registered in persistence when available."""
         try:
             with get_db() as db:
-                # 妫€鏌ユ槸鍚﹀凡瀛樺湪璇ラ偖绠辩殑璁板綍
+                # 濡偓閺屻儲妲搁崥锕€鍑＄€涙ê婀拠銉╁仏缁犺京娈戠拋鏉跨秿
                 existing = crud.get_account_by_email(db, self.email)
                 if not existing:
-                    # 鍒涘缓涓€涓け璐ヨ褰曪紝鏍囪璇ラ偖绠卞凡娉ㄥ唽杩?
+                    # 閸掓稑缂撴稉鈧稉銇戠拹銉ㄨぐ鏇礉閺嶅洩鐠囥儵鍋栫粻鍗炲嚒濞夈劌鍞芥潻?
                     crud.create_account(
                         db,
                         email=self.email,
-                        password="",  # 绌哄瘑鐮佽〃绀烘湭鎴愭姛娉ㄥ唽
+                        password="",  # 缁屽搫鐦戦惍浣姐€冪粈鐑樻弓閹存劖濮涘▔銊ュ斀
                         email_service=self.email_service.service_type.value,
                         email_service_id=self.email_info.get("service_id") if self.email_info else None,
                         status="failed",
                         extra_data={"register_failed_reason": "email_already_registered_on_openai"}
                     )
-                self._log(f"已在数据库中标记邮箱 {self.email} 为已注册状态")
+                self._log(f"Marked email {self.email} as registered in database")
         except Exception as e:
-            logger.warning(f"标记邮箱状态失败: {e}")
+            logger.warning(f"Failed to mark email status: {e}")
 
     def _get_verification_code(self) -> Optional[str]:
-        """鑾峰彇楠岃瘉鐮侊紙澧炲己閲嶅妫€娴嬪拰鏃ュ織锛?"""
+        """Wait for an email verification code from the configured mailbox service."""
         try:
-            self._log(f"[步骤 1] 正在等待邮箱 {self.email} 的验证码...")
+            self._log(f"[Step 1] Waiting for OTP to {self.email}...")
 
             email_id = self.email_info.get("service_id") if self.email_info else None
-            self._log(f"[步骤 2] email_id={email_id}")
+            self._log(f"[Step 2] email_id={email_id}")
 
             exclude_codes = {
                 str(code).strip()
                 for code in self._used_verification_codes
                 if str(code or "").strip()
             }
-            self._log(f"[步骤 3] exclude_codes={exclude_codes}")
+            self._log(f"[Step 3] exclude_codes={exclude_codes}")
 
             if exclude_codes:
                 self._log(
-                    "本轮取件将跳过已取过的验证码: "
+                    "This round will skip already-retrieved OTP codes: "
                     + ", ".join(sorted(exclude_codes))
                 )
 
-            self._log(f"[步骤 4] 开始调用 email_service.get_verification_code()...")
+            self._log(f"[Step 4] calling email_service.get_verification_code()...")
             try:
                 code = self.email_service.get_verification_code(
                     email=self.email,
@@ -2172,21 +2507,21 @@ class RefreshTokenRegistrationEngine:
                     otp_sent_at=self._otp_sent_at,
                     exclude_codes=exclude_codes,
                 )
-                self._log(f"[步骤 5] get_verification_code 返回: code={code}")
+                self._log(f"[Step 5] get_verification_code returned: code={code}")
             except BrokenPipeError as e:
-                self._log(f"[错误] BrokenPipeError: {e}", "error")
+                self._log(f"[閿欒] BrokenPipeError: {e}", "error")
                 import traceback
-                self._log(f"[错误] 堆栈: {traceback.format_exc()}", "error")
-                self._log("尝试重新初始化 session 后再次获取...", "warning")
+                self._log(f"[閿欒] 鍫嗘爤: {traceback.format_exc()}", "error")
+                self._log("Attempting to reinit session then retry OTP retrieval...", "warning")
 
-                # 閲嶆柊鍒濆鍖?session
+                # 闁插秵鏌婇崚婵嗛崠?session
                 self._reset_auth_flow()
-                did, sen_token = self._prepare_authorize_flow("閲嶆柊杩炴帴")
+                did, sen_token = self._prepare_authorize_flow("闁插秵鏌婃潻鐐村复")
                 if not did or not sen_token:
-                    self._log("重新初始化 session 失败", "error")
+                    self._log("Session reinit failed", "error")
                     return None
 
-                self._log("重新初始化 session 成功，再次尝试获取验证码...", "info")
+                self._log("Session reinit succeeded, retrying OTP retrieval...", "info")
                 code = self.email_service.get_verification_code(
                     email=self.email,
                     email_id=email_id,
@@ -2195,29 +2530,29 @@ class RefreshTokenRegistrationEngine:
                     otp_sent_at=self._otp_sent_at,
                     exclude_codes=exclude_codes,
                 )
-                self._log(f"[步骤 5b] 重试后 get_verification_code 返回: code={code}")
+                self._log(f"[Step 5b] retry get_verification_code returned: code={code}")
             except Exception as e:
-                self._log(f"[错误] get_verification_code 异常: {type(e).__name__}: {e}", "error")
+                self._log(f"[Error] get_verification_code exception: {type(e).__name__}: {e}", "error")
                 import traceback
-                self._log(f"[错误] 堆栈: {traceback.format_exc()}", "error")
+                self._log(f"[閿欒] 鍫嗘爤: {traceback.format_exc()}", "error")
                 return None
 
             if code:
                 code_str = str(code).strip()
                 
-                # 妫€鏌ユ槸鍚︿负閲嶅楠岃瘉鐮?
+                # 濡偓閺屻儲妲搁崥锔胯礋闁插秴妤犲矁鐦夐惍?
                 if code_str in exclude_codes:
                     self._log(
                         f"警告: 获取到重复验证码 {code}（与之前相同）",
                         "warning"
                     )
                     self._log(
-                        "OpenAI 可能发送了重复的验证码，将在验证时自动处理",
+                        "OpenAI may have sent duplicate OTP codes, will handle automatically during verification",
                         "warning"
                     )
                 
                 self._used_verification_codes.add(code_str)
-                self._log(f"成功获取验证码: {code}")
+                self._log(f"Successfully got OTP: {code}")
                 return code
             else:
                 self._log("等待验证码超时", "error")
@@ -2226,9 +2561,9 @@ class RefreshTokenRegistrationEngine:
         except TaskInterruption:
             raise
         except Exception as e:
-            self._log(f"[最外层异常] 获取验证码失败: {type(e).__name__}: {e}", "error")
+            self._log(f"[Outermost exception] Failed to get OTP: {type(e).__name__}: {e}", "error")
             import traceback
-            self._log(f"[最外层堆栈] {traceback.format_exc()}", "error")
+            self._log(f"[鏈€澶栧眰鍫嗘爤] {traceback.format_exc()}", "error")
             return None
 
     @staticmethod
@@ -2288,6 +2623,67 @@ class RefreshTokenRegistrationEngine:
             auth_json = self._decode_auth_session_cookie() or {}
             channel = self._find_nested_value(auth_json, "phone_verification_channel")
         return str(channel or "").strip().lower()
+
+    def _capture_phone_otp_context(self, data: Any) -> Dict[str, Any]:
+        context: Dict[str, Any] = {}
+        if not isinstance(data, dict):
+            self._phone_otp_context = context
+            return context
+
+        page = data.get("page") if isinstance(data.get("page"), dict) else {}
+        payload = page.get("payload") if isinstance(page.get("payload"), dict) else {}
+
+        candidate_keys = (
+            "phone_verification_mode",
+            "phone_verification_id",
+            "phoneVerificationId",
+            "pending_authentication_token",
+            "pendingAuthenticationToken",
+            "state",
+            "challenge",
+            "challenge_id",
+            "challengeId",
+            "flow_id",
+            "flowId",
+            "login_challenge_id",
+            "loginChallengeId",
+        )
+
+        for key in candidate_keys:
+            value = payload.get(key)
+            if value in (None, ""):
+                value = data.get(key)
+            if value not in (None, ""):
+                context[key] = value
+
+        self._phone_otp_context = context
+        return context
+
+    def _build_phone_otp_payload(self, code: Optional[str] = None) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if code is not None:
+            payload["code"] = str(code)
+
+        context = dict(getattr(self, "_phone_otp_context", {}) or {})
+        for key in (
+            "phone_verification_mode",
+            "phone_verification_id",
+            "phoneVerificationId",
+            "pending_authentication_token",
+            "pendingAuthenticationToken",
+            "state",
+            "challenge",
+            "challenge_id",
+            "challengeId",
+            "flow_id",
+            "flowId",
+            "login_challenge_id",
+            "loginChallengeId",
+        ):
+            value = context.get(key)
+            if value not in (None, ""):
+                payload[key] = value
+        return payload
 
     @staticmethod
     def _normalize_account_email(value: Any) -> str:
@@ -2380,7 +2776,7 @@ class RefreshTokenRegistrationEngine:
             if callback_url:
                 return callback_url
 
-            self._log(f"OAuth 跟随重定向 {hop + 1}/{max_depth}: {current_url[:120]}...")
+            self._log(f"OAuth 璺熼殢閲嶅畾鍚?{hop + 1}/{max_depth}: {current_url[:120]}...")
 
             try:
                 response = self.session.get(
@@ -2390,7 +2786,7 @@ class RefreshTokenRegistrationEngine:
                     timeout=15,
                 )
             except Exception as e:
-                self._log(f"OAuth 跟随重定向失败: {e}", "warning")
+                self._log(f"OAuth 璺熼殢閲嶅畾鍚戝け璐? {e}", "warning")
                 return ""
 
             referer = current_url
@@ -2413,9 +2809,60 @@ class RefreshTokenRegistrationEngine:
 
         return ""
 
-    # ────────────────────────────────────────────────────────────────────────
-    # OAuth wrapper 层：workspace / callback 解析、代理轮换、run 主流程
-    # ────────────────────────────────────────────────────────────────────────
+    def _resolve_oauth_terminal_state(self, start_url: str, max_depth: int = 10):
+        current_url = normalize_flow_url(start_url, auth_base="https://auth.openai.com")
+        referer = "https://auth.openai.com/sign-in-with-chatgpt/codex/consent"
+        last_url = current_url
+
+        for _hop in range(max_depth):
+            if not current_url:
+                break
+
+            callback_url = self._extract_callback_url_from_candidate(current_url)
+            if callback_url:
+                return extract_flow_state(
+                    {},
+                    current_url=callback_url,
+                    auth_base="https://auth.openai.com",
+                )
+
+            try:
+                response = self.session.get(
+                    current_url,
+                    headers=self._build_navigation_headers(referer=referer),
+                    allow_redirects=False,
+                    timeout=15,
+                )
+            except Exception as exc:
+                self._log(f"OAuth endpoint page probe failed: {exc}", "warning")
+                break
+
+            referer = current_url
+            location = str(response.headers.get("Location") or "").strip()
+            response_url = normalize_flow_url(
+                str(getattr(response, "url", "") or current_url),
+                auth_base="https://auth.openai.com",
+            )
+            last_url = response_url or current_url
+
+            if response.status_code in (301, 302, 303, 307, 308) and location:
+                current_url = normalize_flow_url(
+                    urllib.parse.urljoin(current_url, location),
+                    auth_base="https://auth.openai.com",
+                )
+                last_url = current_url or last_url
+                continue
+            break
+
+        return extract_flow_state(
+            {},
+            current_url=last_url,
+            auth_base="https://auth.openai.com",
+        )
+
+    # 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # OAuth wrapper layer: workspace / callback resolution, retry, run main flow
+    # 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     @classmethod
     def _extract_workspace_id_from_payload(cls, payload: Any) -> str:
@@ -2472,7 +2919,7 @@ class RefreshTokenRegistrationEngine:
                         return workspace_id
                     return self._extract_workspace_id_from_html(body)
             except Exception as exc:
-                self._log(f"Workspace API(browser) 失败: {exc}", "warning")
+                self._log(f"Workspace API(browser) 澶辫触: {exc}", "warning")
                 return ""
 
         if not self.session:
@@ -2491,7 +2938,7 @@ class RefreshTokenRegistrationEngine:
                 timeout=15,
             )
         except Exception as exc:
-            self._log(f"Workspace API 请求失败: {exc}", "warning")
+            self._log(f"Workspace API 璇锋眰澶辫触: {exc}", "warning")
             return ""
 
         try:
@@ -2526,14 +2973,14 @@ class RefreshTokenRegistrationEngine:
                 timeout=20,
             )
         except Exception as exc:
-            self._log(f"Consent HTML 请求失败: {exc}", "warning")
+            self._log(f"Consent HTML 璇锋眰澶辫触: {exc}", "warning")
             return ""
 
         return self._extract_workspace_id_from_html(getattr(response, "text", ""))
 
     def _handle_oauth_callback(self, callback_url: str) -> Dict[str, Any]:
         if not self.oauth_start:
-            self._log("处理 OAuth callback 失败: oauth_start 缺失", "warning")
+            self._log("OAuth callback processing failed: oauth_start is missing", "warning")
             return {}
 
         normalized_callback = (
@@ -2541,7 +2988,7 @@ class RefreshTokenRegistrationEngine:
             or normalize_flow_url(str(callback_url or "").strip(), auth_base="https://auth.openai.com")
         )
         if not normalized_callback:
-            self._log("处理 OAuth callback 失败: callback_url 为空", "warning")
+            self._log("OAuth callback processing failed: callback_url is empty", "warning")
             return {}
 
         try:
@@ -2552,7 +2999,7 @@ class RefreshTokenRegistrationEngine:
             )
             return token_info if isinstance(token_info, dict) else {}
         except Exception as exc:
-            self._log(f"处理 OAuth callback 失败: {exc}", "warning")
+            self._log(f"OAuth callback processing failed: {exc}", "warning")
             return {}
 
     def _select_workspace(self, workspace_id: str) -> str:
@@ -2578,7 +3025,7 @@ class RefreshTokenRegistrationEngine:
                 timeout=20,
             )
         except Exception as exc:
-            self._log(f"选择 Workspace 请求失败: {exc}", "warning")
+            self._log(f"閫夋嫨 Workspace 璇锋眰澶辫触: {exc}", "warning")
             return ""
 
         location = normalize_flow_url(
@@ -2644,7 +3091,7 @@ class RefreshTokenRegistrationEngine:
                             auth_base="https://auth.openai.com",
                         )
                 except Exception as exc:
-                    self._log(f"选择 Organization 请求失败: {exc}", "warning")
+                    self._log(f"閫夋嫨 Organization 璇锋眰澶辫触: {exc}", "warning")
 
         return continue_url
 
@@ -2678,7 +3125,7 @@ class RefreshTokenRegistrationEngine:
                 timeout=20,
             )
         except Exception as exc:
-            self._log(f"获取 OAuth callback 失败: {exc}", "warning")
+            self._log(f"Failed to get OAuth callback: {exc}", "warning")
             return "", workspace_id
 
         for candidate in [response.headers.get("Location"), getattr(response, "url", "")]:
@@ -2717,7 +3164,7 @@ class RefreshTokenRegistrationEngine:
         if not self._has_browser_frontend_state():
             return ""
 
-        # 先用 page_content 被动 GET：如果 OpenAI 直接重定向 consent → callback（无需用户点击）
+        # First try passive GET via page_content: if OpenAI redirects consent -> callback directly (no user click needed)
         try:
             browser_result, response_data = self._submit_browser_form(
                 label="OAuth callback(browser)",
@@ -2726,7 +3173,7 @@ class RefreshTokenRegistrationEngine:
                 form_value="",
             )
         except Exception as exc:
-            self._log(f"浏览器获取 OAuth callback 失败: {exc}", "warning")
+            self._log(f"娴忚鍣ㄨ幏鍙?OAuth callback 澶辫触: {exc}", "warning")
             browser_result, response_data = None, None
 
         if browser_result and self._is_retry_only_browser_error_page(browser_result):
@@ -2755,9 +3202,9 @@ class RefreshTokenRegistrationEngine:
                 if callback_url:
                     return callback_url
 
-        # ⭐ 关键修复：page_content 拿不到 callback 说明 consent 页停在表单页等待用户授权
-        # 用 consent_authorize 主动点击 "Authorize/Allow" 按钮触发 OAuth 授权回调
-        # 这是个人账号（无 workspace）走 OAuth 拿 code 的标准路径
+        # Key fix: if page_content fails to get callback, consent page is stuck at form page waiting for user authorization
+        # Use consent_authorize to actively click "Authorize/Allow" button to trigger OAuth callback
+        # This is the standard path for personal accounts (no workspace) to get OAuth code
         final_url_after_get = ""
         if browser_result:
             final_url_after_get = str(
@@ -2766,7 +3213,7 @@ class RefreshTokenRegistrationEngine:
         consent_url = final_url_after_get or normalized_start
         if "/consent" in consent_url or "/sign-in-with-chatgpt" in consent_url:
             self._log(
-                "consent 页未自动跳转，使用 consent_authorize 主动点击 Authorize 按钮...",
+                "consent page did not auto-redirect, using consent_authorize to actively click the Authorize button...",
                 "warning",
             )
             try:
@@ -2777,16 +3224,16 @@ class RefreshTokenRegistrationEngine:
                     form_value="",
                 )
             except Exception as exc:
-                self._log(f"consent_authorize 失败: {exc}", "warning")
+                self._log(f"consent_authorize 澶辫触: {exc}", "warning")
                 authorize_result, authorize_data = None, None
 
             if authorize_result and not self._is_retry_only_browser_error_page(authorize_result):
                 callback_url = self._extract_callback_from_browser_result(authorize_result)
                 if callback_url:
-                    self._log("✅ consent_authorize 点击成功，已拿到 OAuth callback")
+                    self._log("consent_authorize click succeeded, got OAuth callback")
                     return callback_url
 
-                # 检查 authorize 响应里的 continue_url
+                # 妫€鏌?authorize 鍝嶅簲閲岀殑 continue_url
                 authorize_continue = normalize_flow_url(
                     str(
                         (authorize_data or {}).get("continue_url")
@@ -2798,39 +3245,39 @@ class RefreshTokenRegistrationEngine:
                 )
                 callback_url = self._extract_callback_url_from_candidate(authorize_continue)
                 if callback_url:
-                    self._log("✅ consent_authorize 完成，从 continue_url 拿到 callback")
+                    self._log("consent_authorize done, got callback from continue_url")
                     return callback_url
                 if authorize_continue and authorize_continue != consent_url:
                     callback_url = self._follow_and_extract_callback_url(authorize_continue)
                     if callback_url:
-                        self._log("✅ consent_authorize 完成，跟随重定向拿到 callback")
+                        self._log("consent_authorize done, got callback via redirect")
                         return callback_url
 
-            # consent_authorize 拿不到 callback：诊断 consent 页错误状态
+            # consent_authorize 鎷夸笉鍒?callback锛氳瘖鏂?consent 椤甸敊璇姸鎬?
             authorize_body = str((authorize_result or {}).get("body") or "")
             authorize_visible_buttons = (authorize_result or {}).get("visible_buttons") or []
             normalized_buttons = [str(b or "").strip() for b in authorize_visible_buttons if str(b or "").strip()]
             if normalized_buttons:
                 self._log(
-                    f"consent_authorize 页面按钮: {normalized_buttons[:5]}",
+                    f"consent_authorize page buttons: {normalized_buttons[:5]}",
                     "warning",
                 )
-            # 提取 consent 页关键错误信息（OpenAI 错误通常嵌入在 HTML script/JSON 里）
+            # 鎻愬彇 consent 椤靛叧閿敊璇俊鎭紙OpenAI 閿欒閫氬父宓屽叆鍦?HTML script/JSON 閲岋級
             body_lower = authorize_body.lower()
             error_hints: list[str] = []
             if "verify" in body_lower and "phone" in body_lower:
                 error_hints.append("要求验证手机号")
             if "fraud" in body_lower or "suspicious" in body_lower:
-                error_hints.append("风控/可疑行为")
+                error_hints.append("椋庢帶/鍙枒琛屼负")
             if "codex" in body_lower and ("not available" in body_lower or "unavailable" in body_lower):
                 error_hints.append("codex 不可用")
             if "session" in body_lower and ("expired" in body_lower or "invalid" in body_lower):
-                error_hints.append("session 过期")
+                error_hints.append("session 杩囨湡")
             if "rate" in body_lower and "limit" in body_lower:
-                error_hints.append("被限速")
+                error_hints.append("被限流")
             if error_hints:
-                self._log(f"consent 页错误信息提示: {', '.join(error_hints)}", "warning")
-            # 输出 body 关键片段帮助定位（截取含 error 关键字的上下文）
+                self._log(f"consent 椤甸敊璇俊鎭彁绀? {', '.join(error_hints)}", "warning")
+            # 杈撳嚭 body 鍏抽敭鐗囨甯姪瀹氫綅锛堟埅鍙栧惈 error 鍏抽敭瀛楃殑涓婁笅鏂囷級
             for kw in ("error", "errorMessage", "errorCode", "phone_verification"):
                 idx = authorize_body.find(kw)
                 if idx >= 0:
@@ -2838,7 +3285,7 @@ class RefreshTokenRegistrationEngine:
                     self._log(f"consent body[{kw}]: {snippet[:250]}", "warning")
                     break
 
-        # 最终 fallback：如果有 workspace_id，走 workspace 选择
+        # 鏈€缁?fallback锛氬鏋滄湁 workspace_id锛岃蛋 workspace 閫夋嫨
         normalized_workspace_id = str(workspace_id or "").strip()
         if normalized_workspace_id:
             continue_url = self._select_workspace(normalized_workspace_id)
@@ -2853,11 +3300,11 @@ class RefreshTokenRegistrationEngine:
         rotation_limit = self._get_fraud_guard_rotation_limit()
         current_rotations = int(getattr(self, "_fraud_guard_proxy_rotations", 0) or 0)
         if rotation_limit <= 0:
-            self._log("fraud_guard: 当前配置禁止代理轮换", "warning")
+            self._log("fraud_guard: current config disables proxy rotation", "warning")
             return ""
         if current_rotations >= rotation_limit:
             self._log(
-                f"fraud_guard: 已达到代理轮换上限 {current_rotations}/{rotation_limit}",
+                f"fraud_guard: 宸茶揪鍒颁唬鐞嗚疆鎹笂闄?{current_rotations}/{rotation_limit}",
                 "warning",
             )
             return ""
@@ -2868,20 +3315,20 @@ class RefreshTokenRegistrationEngine:
                 smart_selector.add_to_blacklist(old_proxy, duration=1800)
                 smart_selector.report_proxy_result(old_proxy, success=False, auto_blacklist=False)
             except Exception as exc:
-                self._log(f"fraud_guard: 标记旧代理失败: {exc}", "warning")
+                self._log(f"fraud_guard: failed to mark old proxy: {exc}", "warning")
 
         new_proxy = ""
         try:
             new_proxy = str(smart_selector.get_smart_proxy(randomize=True) or "").strip()
         except Exception as exc:
-            self._log(f"fraud_guard: 智能代理选择失败: {exc}", "warning")
+            self._log(f"fraud_guard: smart proxy selection failed: {exc}", "warning")
 
         if not new_proxy or new_proxy == old_proxy:
             try:
                 from core.proxy_pool import proxy_pool
                 new_proxy = str(proxy_pool.get_next(respect_cooldown=False) or "").strip()
             except Exception as exc:
-                self._log(f"fraud_guard: 代理池回退失败: {exc}", "warning")
+                self._log(f"fraud_guard: proxy pool rollback failed: {exc}", "warning")
                 new_proxy = ""
 
         if not new_proxy or new_proxy == old_proxy:
@@ -2890,31 +3337,48 @@ class RefreshTokenRegistrationEngine:
         self._sync_runtime_proxy(new_proxy, clear_browser_state=True)
         self._fraud_guard_proxy_rotations = current_rotations + 1
         self._log(
-            f"fraud_guard: 代理已从 {old_proxy or '-'} → {new_proxy} "
+            f"fraud_guard: proxy rotated {old_proxy or "-"} -> {new_proxy} "
             f"(rotation {self._fraud_guard_proxy_rotations}/{rotation_limit})",
             "warning",
         )
         return new_proxy
 
     def run(self) -> RegistrationResult:
-        """主流程入口：创建基础账号 → pre-oauth hook → OAuth token 交换"""
+        """Main registration flow: basic account creation -> pre-oauth hook -> token exchange."""
         result = RegistrationResult(success=False)
         result.metadata = result.metadata or {}
 
         try:
-            # Step 1: IP 检查
+            # Step 1: IP 妫€鏌?
             ip_ok, geo = self._check_ip_location()
             if not ip_ok:
-                result.error_message = f"IP location check failed: {geo}"
+                geo_text = str(geo or "").strip()
+                if not geo_text:
+                    self._log(
+                        "IP location check returned no geo hint; continue with proxy connectivity gate",
+                        "warning",
+                    )
+                    ip_ok = True
+                else:
+                    result.error_message = f"IP location check failed: {geo}"
+                    return result
+            if geo:
+                self._reinit_stealth_components(geo_code=str(geo).strip().upper())
+
+            # Step 1.5: proxy connectivity check (before mailbox creation)
+            proxy_ok, proxy_detail = self._validate_proxy_connectivity()
+            if not proxy_ok:
+                result.error_message = f"Proxy cannot reach chatgpt.com: {proxy_detail}"
+                self._log(f"Proxy connectivity check failed, aborting this registration: {proxy_detail}", "error")
                 return result
 
-            # Step 2: 创建邮箱
+            # Step 2: create mailbox
             if not self._create_email():
                 result.error_message = "Failed to create email"
                 return result
             result.email = self.email or ""
 
-            # Step 3: 创建基础 ChatGPT 账号（注册 + OTP + about-you，跳过 add-phone）
+            # Step 3: create base ChatGPT account (registration + OTP + about-you, skip add-phone)
             basic_ok, basic_error = self._create_consumer_chatgpt_basic_account(result)
             if not basic_ok:
                 result.error_message = basic_error or "consumer_chatgpt_registration_failed"
@@ -2924,34 +3388,31 @@ class RefreshTokenRegistrationEngine:
             if not self._run_pre_oauth_auto_pay_hook(result):
                 return result
 
-            # Step 5: OAuth 授权（全新 session 登录 → 邮箱 → 密码 → OTP → add-phone → consent → callback → refresh_token）
-            # 注意：不复用基础注册 session，避免被 fraud_guard 标记的旧会话状态污染
-            self._log("基础账号已就绪，开始 OAuth 授权（全新 session 登录流程）...")
-            # 依据最新需求：创建完基础账号后不要立刻使用当前 session 进行 oauth
-            # 而是直接清空 session，进入全新的重新登录流程（重收邮箱验证码）
-            # 所以直接跳过当前的 _complete_token_exchange_from_current_session 逻辑
-            # block everything before login_ok
-            
+            # Step 5: OAuth authorization (fresh session login -> email -> password -> OTP -> add-phone -> consent -> callback -> refresh_token)
+            # Note: do not reuse registration session to avoid old fraud_guard-flagged session state contamination
+            self._log("Base account ready, starting OAuth authorization (fresh session login flow)...")
+            # Per current flow constraint: base account stage only goes to about-you, no OAuth token
+            # is obtained in the current consumer session. A fresh session re-login auth chain follows.
             login_ok, login_error = self._restart_login_flow()
             if not login_ok:
                 result.error_message = login_error or "restart_login_flow_failed"
                 return result
 
-            # Step 6: 完成 token 交换（OTP → add-phone → consent → callback → refresh_token）
-            # 外层 OAuth retry 逻辑移除：因为业务需求"验证邮箱再一直addphone，如果失败也不要login了"
+            # Step 6: complete token exchange (OTP -> add-phone -> consent -> callback -> refresh_token)
+            # Outer OAuth retry logic removed: biz requirement is verify email then addphone; if it fails, don't retry login
             token_ok = self._complete_token_exchange(result)
             if token_ok:
                 result.success = True
                 result.metadata["token_acquired_via_relogin"] = True
                 return result
 
-            # 若 token_exchange() 返回 False 且 _oauth_blocked_by_phone 为 True 时
-            # 说明经过了一轮登录/验证邮箱并走到了 addphone 但是没过去风控
+            # When token_exchange() returns False and _oauth_blocked_by_phone is True,
+            # it means one round of login + email verification reached addphone but failed risk control
             if getattr(self, "_oauth_blocked_by_phone", False):
                 result.success = False
                 result.error_message = "oauth_blocked_by_phone"
                 result.metadata["oauth_state"] = "blocked_by_phone"
-                self._log("新登录会话的 OAuth 在 add-phone 步骤被阻断，按要求保留基础账号状态并结束不再重试。", "warning")
+                self._log("新登录会话的 OAuth 在 add-phone 步骤被阻断，按要求结束且不再重试", "warning")
                 return result
 
             result.error_message = result.error_message or "Failed to obtain real OAuth credentials after restart login"
@@ -2960,7 +3421,7 @@ class RefreshTokenRegistrationEngine:
         except TaskInterruption:
             raise
         except Exception as exc:
-            self._log(f"run() 异常: {exc}", "error")
+            self._log(f"run() exception: {exc}", "error")
             result.error_message = f"registration_exception: {exc}"
             return result
 
@@ -2977,7 +3438,7 @@ class RefreshTokenRegistrationEngine:
             update_post_otp_state=True,
         )
         if not browser_result:
-            self._log("OAuth about-you create_account 失败: Browser Form returned no result", "warning")
+            self._log("OAuth about-you create_account failed: Browser Form returned no result", "warning")
             return ""
 
         status = int(browser_result.get("status") or 0)
@@ -3017,7 +3478,7 @@ class RefreshTokenRegistrationEngine:
             self._about_you_create_account_already_exists_without_consent = True
             return ""
 
-        self._log(f"OAuth about-you create_account 失败: {status} {body_preview}", "warning")
+        self._log(f"OAuth about-you create_account failed: {status} {body_preview}", "warning")
         return ""
 
     def _resolve_post_otp_continue_url(self) -> str:
@@ -3033,7 +3494,7 @@ class RefreshTokenRegistrationEngine:
                 if created_continue_url:
                     return created_continue_url
 
-            self._log("OTP 后进入 about-you，按参考 RT 逻辑补齐 consent 跳转...")
+            self._log("After OTP reached about-you, patching consent redirect per RT logic...")
             try:
                 response = self.session.get(
                     "https://auth.openai.com/about-you",
@@ -3053,7 +3514,7 @@ class RefreshTokenRegistrationEngine:
                 if "consent" in final_url or "organization" in final_url:
                     return final_url
             except Exception as e:
-                self._log(f"GET about-you 失败: {e}", "warning")
+                self._log(f"GET about-you failed: {e}", "warning")
 
             created_continue_url = self._create_account_during_oauth_if_needed()
             if created_continue_url:
@@ -3181,7 +3642,7 @@ class RefreshTokenRegistrationEngine:
             for btn in buttons
             if str(btn or "").strip()
         ]
-        if normalized_buttons and all(btn in {"重试", "retry", "try again"} for btn in normalized_buttons):
+        if normalized_buttons and all(btn in {"閲嶈瘯", "retry", "try again"} for btn in normalized_buttons):
             return True
 
         body = str(browser_result.get("body") or "").strip().lower()
@@ -3189,7 +3650,7 @@ class RefreshTokenRegistrationEngine:
             return False
         if "authorize" in body or "allow" in body or "consent-approve" in body:
             return False
-        if ("<button>重试</button>" in body or ">retry<" in body or ">try again<" in body):
+        if ("<button>閲嶈瘯</button>" in body or ">retry<" in body or ">try again<" in body):
             return True
         return False
 
@@ -3299,6 +3760,7 @@ class RefreshTokenRegistrationEngine:
         body_lower = text.lower()
         for code in (
             "fraud_guard",
+            "invalid_state",
             "rate_limit_exceeded",
             "landline_disallowed",
             "voip_phone_disallowed",
@@ -3446,7 +3908,7 @@ class RefreshTokenRegistrationEngine:
                 self._last_phone_failure_reason = "low_balance"
                 return False
 
-            country_config = "16,10,12,73,33,117,78,86,151,6,22,52,187"
+            country_config = "10,6,22,73,187,52,12,78,33,117,86,151"
             quality = ""
             max_price = None
             min_price = None
@@ -3579,7 +4041,7 @@ class RefreshTokenRegistrationEngine:
             otp_timeout_seconds = self._parse_optional_int(otp_timeout_config, default=120, min_value=30, max_value=600)
             max_code_attempts = self._parse_optional_int(code_attempts_config, default=2, min_value=1, max_value=5)
             max_add_phone_send_attempts = self._get_add_phone_send_attempt_limit()
-            no_number_target = "下一个国家或价格" if price_steps_config else "下一个国家"
+            no_number_target = "下一个国家或价格档" if price_steps_config else "下一个国家"
             quality_label = f", quality={quality}" if quality else ""
             price_label = f", max_price={max_price:g}" if max_price is not None else ""
             price_steps_label = (
@@ -3608,7 +4070,7 @@ class RefreshTokenRegistrationEngine:
             global_attempt = 0
             attempts_by_country: dict[str, int] = {}
             total_phone_attempt_limit = max_phone_attempts * max(1, len(countries)) * max(1, len(price_limits))
-            # 在所有国家间轮转；smsbower_phone_attempts 表示每个国家最多取号次数。
+            # Rotate across all countries; smsbower_phone_attempts is per-country cap.
             skip_countries: dict[str, str] = {}  # country -> reason
             while global_attempt < total_phone_attempt_limit:
               for active_max_price in price_limits:
@@ -3624,9 +4086,8 @@ class RefreshTokenRegistrationEngine:
                     non_sms_rejections = 0
                     in_use_rejections = 0
                     self._suspicious_same_country_retries = 0
-                    country_had_number = False
                     remaining_country_attempts = max_phone_attempts - attempts_by_country.get(country, 0)
-                    for _country_attempt in range(min(3, remaining_country_attempts)):  # 每国每轮最多 3 次
+                    for _country_attempt in range(min(3, remaining_country_attempts)):  # Max 3 attempts per country per round.
                         if global_attempt >= total_phone_attempt_limit:
                             break
                         if add_phone_send_attempts >= max_add_phone_send_attempts:
@@ -3667,7 +4128,7 @@ class RefreshTokenRegistrationEngine:
                             except SmsBowerInvalidPhoneExceptionError:
                                 if not phone_exception:
                                     raise
-                                # 之前这里会打印警告，现在改为 debug 隐藏或者完全注释掉，避免被误认为报错日志冗余
+                                # Keep this silent to avoid noisy false-positive error logs.
                                 # self._log("SMSBOWER rejected phoneException; retrying getNumber without excluded phones", "debug")
                                 number = client.get_number(
                                     service="dr",
@@ -3741,13 +4202,13 @@ class RefreshTokenRegistrationEngine:
                             )
                         except SmsBowerNoNumberError:
                             self._log(
-                                f"SMSBOWER country={country}{active_price_label} 无可用号码，尝试下一国家",
+                                f"SMSBOWER country={country}{active_price_label} has no available numbers, try next country",
                                 "warning",
                             )
                             self._set_phone_failure_reason("no_numbers")
-                            break  # 跳到下一国家
+                            break
 
-                        # 模拟人类行为：随机延迟 1-3 秒（避免请求间隔过快触发风控）
+                        # Simulate human pacing with short random delay to reduce risk controls.
                         if add_phone_send_attempts >= max_add_phone_send_attempts:
                             self._set_phone_failure_reason("add_phone_attempt_limit")
                             self._log(
@@ -3797,9 +4258,11 @@ class RefreshTokenRegistrationEngine:
                                 or "cf-browser-verification" in send_body
                                 or "challenges.cloudflare.com" in send_body
                             ):
-                                # 按用户要求"不能失败，一直换号试"
-                                # Cloudflare 挑战通常下次浏览器会话可解决，cancel 当前号继续
-                                self._log("cloudflare_challenge_blocked: phone send 被 Cloudflare 拦截，cancel 后换号重试", "warning")
+                                # For Cloudflare challenge, cancel current activation and rotate number.
+                                self._log(
+                                    "cloudflare_challenge_blocked: phone send blocked by Cloudflare; cancel and rotate number",
+                                    "warning",
+                                )
                                 try:
                                     client.cancel(activation_id)
                                 except Exception:
@@ -3809,7 +4272,7 @@ class RefreshTokenRegistrationEngine:
                                 self._set_phone_failure_reason("cloudflare_blocked")
                                 import time as _time
                                 _time.sleep(5)
-                                return False
+                                continue
                             body_lower = send_body.lower()
                             if "landline" in body_lower or "landline_disallowed" in body_lower:
                                 landline_rejections += 1
@@ -3819,11 +4282,12 @@ class RefreshTokenRegistrationEngine:
                                     cooled_actual_providers.add(actual_provider)
                                 self._log("non_retryable_phone_rejection: landline_disallowed", "warning")
                                 self._log(
-                                    f"Phone {number.phone_number} rejected: landline_disallowed（座机）→ 跳过 country={country}",
+                                    f"Phone {number.phone_number} rejected: landline_disallowed, skip country={country}",
                                     "warning",
                                 )
                                 self._set_phone_failure_reason("landline_disallowed")
-                                return False
+                                skip_countries[country] = "landline_disallowed"
+                                break
                             if "voip_phone_disallowed" in body_lower or "voip" in body_lower:
                                 if number_prefix:
                                     cooled_prefixes.add(number_prefix)
@@ -3841,10 +4305,10 @@ class RefreshTokenRegistrationEngine:
                                 if actual_provider:
                                     cooled_actual_providers.add(actual_provider)
                                 self._log(
-                                    f"Phone {number.phone_number} rejected: fraud_guard — 会话/IP 被 OpenAI 标记",
+                                    f"Phone {number.phone_number} rejected: fraud_guard, session/IP flagged by OpenAI",
                                     "error",
                                 )
-                                # 立即 cancel 当前号码避免计费
+                                # Cancel immediately to avoid being charged for blocked number.
                                 try:
                                     client.cancel(activation_id)
                                 except Exception:
@@ -3852,17 +4316,16 @@ class RefreshTokenRegistrationEngine:
                                 activation_id = None
                                 activation_completed = False
 
-                                # 1) 根据需求：只要遇到了addphone的时候就只尝试换手机号，不再换代理也不要重新登录
-                                # 直接跨国家继续买号
+                                # Requirement: keep rotating phone numbers only; no proxy/login reset here.
                                 if not hasattr(self, '_fraud_guard_consecutive'):
                                     self._fraud_guard_consecutive = 0
                                 self._fraud_guard_consecutive += 1
                                 self._log(
-                                    f"fraud_guard #{self._fraud_guard_consecutive}: 返回IP标记，继续尝试下一个号码",
+                                    f"fraud_guard #{self._fraud_guard_consecutive}: environment flagged; continue rotating number",
                                     "warning",
                                 )
 
-                                # 2) 兜底：连续 N 个 fraud_guard 止损（可选，可以调大）
+                                # Safety stop after too many consecutive fraud_guard responses.
                                 if self._fraud_guard_consecutive >= 15:
                                     self._set_phone_failure_reason("environment_unusable_fraud_guard")
                                     self._log(
@@ -3872,51 +4335,49 @@ class RefreshTokenRegistrationEngine:
                                     return False
 
                                 self._set_phone_failure_reason("fraud_guard")
-                                continue  # 改为继续尝试当前国家下一个号码，而不是跳出循环换国家
+                                continue
                             if "suspicious" in body_lower or "suspicious_behav" in body_lower:
                                 if number_prefix:
                                     cooled_prefixes.add(number_prefix)
                                 if actual_provider:
                                     cooled_actual_providers.add(actual_provider)
-                                # 不立即跳国家：同国家再试最多 2 个号码（有时只是特定号段被标记）
+                                # Do not skip country immediately; retry same country up to 2 times.
                                 if not hasattr(self, '_suspicious_same_country_retries'):
                                     self._suspicious_same_country_retries = 0
                                 self._suspicious_same_country_retries += 1
                                 if self._suspicious_same_country_retries <= 2:
                                     self._log(
-                                        f"Phone {number.phone_number} rejected: suspicious_behaviour，同国家再试 ({self._suspicious_same_country_retries}/2)",
+                                        f"Phone {number.phone_number} rejected: suspicious_behaviour, retry same country ({self._suspicious_same_country_retries}/2)",
                                         "warning",
                                     )
                                     self._set_phone_failure_reason("suspicious_behaviour")
                                     import time as _time
-                                    _time.sleep(5)  # 等待 5 秒后再试
+                                    _time.sleep(5)
                                     continue
                                 else:
                                     self._suspicious_same_country_retries = 0
                                     self._log(
-                                        f"Phone {number.phone_number} rejected: suspicious_behaviour → 跳过 country={country}，尝试下一国家",
+                                        f"Phone {number.phone_number} rejected: suspicious_behaviour, skip country={country}",
                                         "warning",
                                     )
                                     self._set_phone_failure_reason("suspicious_behaviour")
-                                    break  # 本轮换国家，下一轮还可以再试
+                                    break
                             if "too many" in body_lower or ("rate" in body_lower and "limit" in body_lower):
                                 if number_prefix:
                                     cooled_prefixes.add(number_prefix)
                                 if actual_provider:
                                     cooled_actual_providers.add(actual_provider)
-                                # 按用户要求"不能失败，一直换号试"
-                                # rate_limit 是账户级限速，递增退避等待让限速窗口过期
+                                # Account-level rate limiting: short backoff then rotate number.
                                 if not hasattr(self, '_rate_limit_consecutive'):
                                     self._rate_limit_consecutive = 0
                                 self._rate_limit_consecutive += 1
-                                # 退避：最多 3s（用户需求：换号比等待更划算，不等限速窗口）
                                 rl_backoff = min(3, self._rate_limit_consecutive)
                                 self._log(
                                     f"Phone verification rate-limited #{self._rate_limit_consecutive}: "
-                                    f"等待 {rl_backoff}s 后继续换号尝试（OpenAI 账户级限速窗口过期）",
+                                    f"wait {rl_backoff}s then continue rotating numbers",
                                     "warning",
                                 )
-                                # 立即 cancel 当前号码避免计费
+                                # Cancel immediately to avoid billing.
                                 try:
                                     client.cancel(activation_id)
                                 except Exception:
@@ -3926,7 +4387,7 @@ class RefreshTokenRegistrationEngine:
                                 import time as _time
                                 _time.sleep(rl_backoff)
                                 self._set_phone_failure_reason("phone_rate_limited")
-                                continue  # 同 country 继续换号
+                                continue
                             if "phone_number_in_use" in body_lower or "already in use" in body_lower:
                                 in_use_rejections += 1
                                 if number_prefix:
@@ -3935,13 +4396,14 @@ class RefreshTokenRegistrationEngine:
                                     cooled_actual_providers.add(actual_provider)
                                 if in_use_rejections >= 3:
                                     self._log(
-                                        f"Phone {number.phone_number} rejected: phone_number_in_use 连续 {in_use_rejections} 次 → 跳过 country={country}",
+                                        f"Phone {number.phone_number} rejected: phone_number_in_use {in_use_rejections} times, skip country={country}",
                                         "warning",
                                     )
                                     self._set_phone_failure_reason("phone_number_in_use")
-                                    break  # 跳到下一国家
+                                    skip_countries[country] = "phone_number_in_use"
+                                    break
                                 self._log(
-                                    f"Phone {number.phone_number} rejected: phone_number_in_use，继续尝试 country={country} 下一个号码",
+                                    f"Phone {number.phone_number} rejected: phone_number_in_use, continue with next number in country={country}",
                                     "warning",
                                 )
                                 self._set_phone_failure_reason("phone_number_in_use")
@@ -3955,24 +4417,24 @@ class RefreshTokenRegistrationEngine:
                             continue
 
                         verification_channel = self._extract_phone_verification_channel(response_data)
+                        otp_context = self._capture_phone_otp_context(response_data)
+                        if otp_context:
+                            self._log(
+                                "Phone OTP context captured: "
+                                + ", ".join(sorted(otp_context.keys()))
+                            )
                         if verification_channel and verification_channel != "sms":
                             non_sms_rejections += 1
                             self._log_add_phone_attempt(add_phone_event)
-                            if non_sms_rejections >= 3:
-                                self._log(
-                                    f"OpenAI selected {verification_channel} phone channel for country={country} 连续 {non_sms_rejections} 次 → 跳过该国家",
-                                    "warning",
-                                )
-                                self._set_phone_failure_reason("non_sms_phone_channel")
-                                break
                             self._log(
-                                f"OpenAI selected {verification_channel} phone channel for {number.phone_number}; rotating number",
+                                f"OpenAI selected {verification_channel} phone channel for {number.phone_number}; skip country={country}",
                                 "warning",
                             )
                             self._set_phone_failure_reason("non_sms_phone_channel")
-                            continue
+                            skip_countries[country] = f"non_sms_phone_channel:{verification_channel}"
+                            break
 
-                        # OpenAI 接受号码 → 清零 fraud_guard 连续计数
+                        # OpenAI accepted the number; reset fraud_guard streak.
                         self._fraud_guard_consecutive = 0
                         if not _set_smsbower_status_with_retry(1, "ready after OpenAI accepted phone send"):
                             self._log_add_phone_attempt(add_phone_event)
@@ -4008,9 +4470,8 @@ class RefreshTokenRegistrationEngine:
                             self._set_phone_failure_reason("otp_timeout")
                             continue
                         except SmsBowerError as exc:
-                            # 单个号码 SMSBOWER 服务端错误（激活取消/SQL 错误等）
-                            # 不应中止整个流程，cancel 当前号码后尝试下一个
-                            self._log(f"SMSBOWER 激活异常 (activation_id={activation_id}): {exc}", "warning")
+                            # Per-number activation errors should not abort the whole flow.
+                            self._log(f"SMSBOWER activation error (activation_id={activation_id}): {exc}", "warning")
                             self._set_phone_failure_reason("smsbower_activation_error")
                             try:
                                 client.cancel(activation_id)
@@ -4027,7 +4488,10 @@ class RefreshTokenRegistrationEngine:
                                     label="手机验证码重发",
                                     page_url="https://auth.openai.com/add-phone",
                                     form_type="phone_otp_resend",
-                                    form_value="{}",
+                                    form_value=json.dumps(
+                                        self._build_phone_otp_payload(),
+                                        separators=(",", ":"),
+                                    ),
                                     flow="phone_verification",
                                 )
                                 if not resend_result or int(resend_result.get("status") or 0) >= 400:
@@ -4051,7 +4515,10 @@ class RefreshTokenRegistrationEngine:
                                 label="手机验证码提交",
                                 page_url="https://auth.openai.com/add-phone",
                                 form_type="phone_validate",
-                                form_value=str(code),
+                                form_value=json.dumps(
+                                    self._build_phone_otp_payload(str(code)),
+                                    separators=(",", ":"),
+                                ),
                                 update_post_otp_state=True,
                                 flow="phone_verification",
                             )
@@ -4075,22 +4542,39 @@ class RefreshTokenRegistrationEngine:
                                 return True
 
                             self._log(f"Phone validate failed: {validate_body[:200]}", "warning")
+                            validate_body_lower = validate_body.lower()
+                            validate_error_code = self._extract_openai_error_code(validate_body)
+                            is_invalid_state = (
+                                validate_status == 409
+                                or validate_error_code == "invalid_state"
+                                or "invalid session" in validate_body_lower
+                                or "invalid_state" in validate_body_lower
+                            )
+                            if is_invalid_state:
+                                self._log(
+                                    "Phone validate failed with invalid_state (session expired/reset). "
+                                    "Stop OTP resend and return to upper flow for session rebuild.",
+                                    "warning",
+                                )
+                                self._set_phone_failure_reason("session_invalid_state")
+                                return False
+
                             self._set_phone_failure_reason("phone_validate_failed")
-                            if "invalid" in validate_body.lower() or "expired" in validate_body.lower():
+                            if "invalid" in validate_body_lower or "expired" in validate_body_lower:
                                 continue
                             break
 
                         self._log(f"Phone {number.phone_number} failed verification, rotating number...", "warning")
 
-              # while 循环内：检查是否所有国家都被永久跳过
+              # End-of-round checks for country/price rotation loops.
               if len(skip_countries) >= len(countries):
-                  self._log("所有国家都被永久跳过（座机/non-sms），终止", "error")
+                  self._log("All configured countries are skipped permanently (landline/non-sms/in-use), stopping", "error")
                   break
-              # 如果本轮没有任何号码被成功获取，说明所有国家在当前价格下都无号
+              # If we never got a number in this full round, all countries were dry for current filters.
               if not saw_available_number:
-                  self._log("本轮所有国家均无可用号码，终止循环", "error")
+                  self._log("No available number found in this round across all countries; stopping", "error")
                   break
-              # 一轮所有国家都尝试过了且没成功，继续 while 下一轮（重置本轮标记）
+              # Reset marker for next full round.
               saw_available_number = False
             if not saw_available_number and not self._last_phone_failure_reason:
                 self._set_phone_failure_reason("no_numbers")
@@ -4123,7 +4607,7 @@ class RefreshTokenRegistrationEngine:
                     pass
 
     def _check_email_domain_and_suggest(self):
-        """检查邮箱类型并进行预警建议"""
+        """Inspect the mailbox domain and emit heuristic suggestions."""
         try:
             if not self.email or '@' not in self.email:
                 return
@@ -4137,32 +4621,32 @@ class RefreshTokenRegistrationEngine:
                 self._log(f"当前邮箱域名: {domain}", "warning")
                 self._log("建议使用: hotmail.com", "warning")
                 self._log("", "warning")
-                self._log("原因: OpenAI 对非 hotmail.com 邮箱的风控较严格", "warning")
+                self._log("原因: OpenAI 对非 hotmail.com 邮箱风控通常更严格", "warning")
                 self._log("使用 hotmail.com 邮箱可以提高注册成功率", "warning")
                 self._log("", "warning")
                 self._log("建议操作:", "warning")
-                self._log("1. 更换邮箱服务为 hotmail.com", "warning")
+                self._log("1. 更换邮箱服务商为 hotmail.com", "warning")
                 self._log("2. 更换住宅代理 IP", "warning")
                 self._log("3. 降低注册频率", "warning")
-                self._log("4. 尝试不同时间段注册", "warning")
+                self._log("4. 尝试在不同时间段注册", "warning")
                 self._log("=" * 60, "warning")
         except Exception as e:
             self._log(f"检查邮箱域名建议失败: {e}", "debug")
 
     def save_to_database(self, result: RegistrationResult) -> bool:
         """
-        淇濆瓨娉ㄥ唽缁撴灉鍒版暟鎹簱
+        Persist the registration result when database helpers are available.
 
         Args:
-            result: 娉ㄥ唽缁撴灉
+            result: Registration result object.
 
         Returns:
-            鏄惁淇濆瓨鎴愬姛
+            Whether the persistence step succeeded.
         """
         if not result.success:
             return False
 
-        return True  # 鐢?account_manager 缁熶竴澶勭悊瀛樺簱
+        return True  # 閻?account_manager 缂佺喍绔存径鍕倞鐎涙ê绨?
 
     def _set_result_failure(self, result: RegistrationResult, message: str) -> RegistrationResult:
         result.success = False
@@ -4272,12 +4756,7 @@ class RefreshTokenRegistrationEngine:
         return True
 
     def _validate_verification_code(self, code: str) -> bool:
-        """Submit email OTP to OpenAI /api/accounts/email-otp/validate.
-
-        对齐参考实现 (chatgpt_client.verify_email_otp 与 GitHub 注册机)：
-        仅带 datadog trace，不附带 sentinel token；成功后从响应抽取
-        page_type/continue_url 写入 _post_otp_* 供后续流程判断。
-        """
+        """Submit email OTP and persist the resulting post-OTP page state."""
         code_str = str(code or "").strip()
         if not code_str:
             return False
@@ -4297,10 +4776,10 @@ class RefreshTokenRegistrationEngine:
                 timeout=30,
             )
             status = resp.status_code
-            self._log(f"登录 OTP 提交状态: {status}")
+            self._log(f"Login OTP submit status: {status}")
 
             if status != 200:
-                self._log(f"登录 OTP 提交失败: {resp.text[:300]}", "error")
+                self._log(f"Login OTP submit failed: {resp.text[:300]}", "error")
                 return False
 
             try:
@@ -4324,12 +4803,12 @@ class RefreshTokenRegistrationEngine:
             self._post_otp_page_type = page_type
             self._post_otp_continue_url = continue_url
             self._log(
-                f"登录 OTP 验证成功 page={page_type or '-'} "
+                f"Login OTP verified page={page_type or "-"} "
                 f"next={continue_url[:100] if continue_url else '-'}"
             )
             return True
         except Exception as exc:
-            self._log(f"登录 OTP 提交异常: {exc}", "error")
+            self._log(f"Login OTP submit exception: {exc}", "error")
             return False
 
     def _create_user_account(self) -> bool:
@@ -4337,5 +4816,5 @@ class RefreshTokenRegistrationEngine:
 
 
 
-# 鍏煎鏃у懡鍚嶏紝閫愭杩佺Щ鍒版洿瑙佸悕鐭ユ剰鐨勭被鍚嶃€?
+# 閸忕厧閺冄冩嚒閸氬稄绱濋柅鎰潻浣盒╅崚鐗堟纯鐟欎礁鎮曢惌銉﹀壈閻ㄥ嫮琚崥宥冣偓?
 RegistrationEngine = RefreshTokenRegistrationEngine

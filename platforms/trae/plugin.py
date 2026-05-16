@@ -42,18 +42,53 @@ class TraePlatform(BasePlatform):
                 password=password,
                 otp_callback=otp_cb if self.mailbox else None,
             )
+        token = str(
+            result.get("token")
+            or result.get("access_token")
+            or result.get("accessToken")
+            or ""
+        ).strip()
+        if not token:
+            raise RuntimeError("Trae 注册成功但未获取到 token，无法切换到桌面应用")
 
-        return Account(
+        account = Account(
             platform="trae",
             email=result["email"],
             password=result["password"],
             user_id=result["user_id"],
-            token=result["token"],
+            token=token,
             region=result["region"],
             status=AccountStatus.REGISTERED,
-            extra={"cashier_url": result["cashier_url"],
-                   "ai_pay_host": result["ai_pay_host"]},
+            extra={
+                "cashier_url": result["cashier_url"],
+                "ai_pay_host": result["ai_pay_host"],
+                "access_token": token,
+            },
         )
+
+        # 可选：注册成功后自动切换到桌面端 Trae 账号
+        auto_switch_raw = str(self.config.extra.get("trae_auto_switch", "")).strip().lower()
+        auto_switch = auto_switch_raw in {"1", "true", "yes", "on"}
+        if auto_switch:
+            from platforms.trae.switch import switch_trae_account, restart_trae_ide
+
+            ok, msg = switch_trae_account(
+                token=account.token or "",
+                user_id=account.user_id or "",
+                email=account.email or "",
+                region=account.region or "",
+            )
+            if ok:
+                log(f"Trae 自动切换成功: {msg}")
+                restart_ok, restart_msg = restart_trae_ide()
+                if restart_ok:
+                    log(f"Trae 自动重启成功: {restart_msg}")
+                else:
+                    log(f"Trae 自动重启失败: {restart_msg}")
+            else:
+                log(f"Trae 自动切换失败: {msg}")
+
+        return account
 
     def check_valid(self, account: Account) -> bool:
         return bool(account.token)
@@ -70,8 +105,13 @@ class TraePlatform(BasePlatform):
         """执行平台操作"""
         if action_id == "switch_account":
             from platforms.trae.switch import switch_trae_account, restart_trae_ide
-            
-            token = account.token
+
+            extra = account.extra or {}
+            token = (
+                account.token
+                or extra.get("access_token", "")
+                or extra.get("accessToken", "")
+            )
             user_id = account.user_id or ""
             email = account.email or ""
             region = account.region or ""
@@ -93,8 +133,13 @@ class TraePlatform(BasePlatform):
         
         elif action_id == "get_user_info":
             from platforms.trae.switch import get_trae_user_info
-            
-            token = account.token
+
+            extra = account.extra or {}
+            token = (
+                account.token
+                or extra.get("access_token", "")
+                or extra.get("accessToken", "")
+            )
             if not token:
                 return {"ok": False, "error": "账号缺少 token"}
             

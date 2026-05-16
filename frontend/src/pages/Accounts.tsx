@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   Table,
@@ -17,6 +17,10 @@ import {
   Typography,
   Alert,
   theme,
+  Card,
+  Drawer,
+  Grid,
+  Pagination,
 } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -40,52 +44,19 @@ import {
 import { ChatGPTRegistrationModeSwitch } from '@/components/ChatGPTRegistrationModeSwitch'
 import { TaskLogPanel } from '@/components/TaskLogPanel'
 import { usePersistentChatGPTRegistrationMode } from '@/hooks/usePersistentChatGPTRegistrationMode'
-import { parseBooleanConfigValue } from '@/lib/configValueParsers'
 import { buildChatGPTRegistrationRequestAdapter } from '@/lib/chatgptRegistrationRequestAdapter'
 import { apiFetch } from '@/lib/utils'
 import { normalizeExecutorForPlatform } from '@/lib/platformExecutorOptions'
 import type { CheckboxChangeEvent } from 'antd/es/checkbox'
 import { useRegisterTask } from '@/contexts/RegisterTaskContext'
+import { buildRegisterExtra } from '@/lib/registerConfigMapper'
+
+import { MIX_PROVIDER_OPTIONS, DEFAULT_PARALLEL_MAIL_MIX, resolveConfiguredMixOptions } from '@/lib/mailProviders'
 
 const { Text } = Typography
-const DEFAULT_PARALLEL_MAIL_MIX = ['luckmail', 'cfworker', 'mail2925']
-const MIX_PROVIDER_OPTIONS = [
-  { value: 'luckmail', label: 'LuckMail' },
-  { value: 'cfworker', label: 'CF Worker' },
-  { value: 'mail2925', label: '2925 Mail' },
-  { value: 'moemail', label: 'MoeMail (sall.cc)' },
-  { value: 'tempmail_lol', label: 'TempMail.lol' },
-  { value: 'skymail', label: 'SkyMail (CloudMail)' },
-  { value: 'maliapi', label: 'YYDS Mail / MaliAPI' },
-  { value: 'gptmail', label: 'GPTMail' },
-  { value: 'opentrashmail', label: 'OpenTrashMail' },
-  { value: 'duckmail', label: 'DuckMail' },
-  { value: 'freemail', label: 'Freemail' },
-  { value: 'laoudo', label: 'Laoudo' },
-]
+const { useBreakpoint } = Grid
 
-function resolveConfiguredMixOptions(cfg: Record<string, any>) {
-  const has = (key: string) => String(cfg?.[key] || '').trim().length > 0
-  const allowed = new Set<string>()
-
-  if (has('luckmail_api_key')) allowed.add('luckmail')
-  if (has('cfworker_api_url')) allowed.add('cfworker')
-  if (has('mail2925_login_name') && has('mail2925_password')) allowed.add('mail2925')
-  if (has('moemail_api_url') && has('moemail_api_key')) allowed.add('moemail')
-  if (has('skymail_api_base') && has('skymail_token')) allowed.add('skymail')
-  if (has('maliapi_base_url') && has('maliapi_api_key')) allowed.add('maliapi')
-  if (has('gptmail_base_url') && has('gptmail_api_key')) allowed.add('gptmail')
-  if (has('opentrashmail_api_url')) allowed.add('opentrashmail')
-  if (has('duckmail_api_url') || has('duckmail_provider_url')) allowed.add('duckmail')
-  if (has('freemail_api_url')) allowed.add('freemail')
-  if (has('laoudo_email') && has('laoudo_auth')) allowed.add('laoudo')
-  allowed.add('tempmail_lol')
-
-  const options = MIX_PROVIDER_OPTIONS.filter((item) => allowed.has(item.value))
-  return options.length > 0
-    ? options
-    : MIX_PROVIDER_OPTIONS.filter((item) => DEFAULT_PARALLEL_MAIL_MIX.includes(item.value))
-}
+type AccountsViewMode = 'table-dense' | 'table-compact' | 'card-list'
 
 function normalizeTaskMeta(task: any) {
   const progress = String(task?.progress || '0/0')
@@ -157,10 +128,6 @@ function normalizeAccount(account: any) {
       chatgptLocal: account.chatgpt_local || {},
       effectiveStatus: account.effective_status || account.status || 'registered',
       invalidReason: account.invalid_reason || '',
-      autoPayState: account.auto_pay_state || '',
-      autoPayDiag: account.auto_pay_diagnostic_code || '',
-      autoPayPlan: account.auto_pay_plan || '',
-      autoPayProvider: account.auto_pay_provider || '',
     }
   }
   const extra = parseExtraJson(account.extra_json)
@@ -169,11 +136,19 @@ function normalizeAccount(account: any) {
   const chatgptLocal = extra.chatgpt_local && typeof extra.chatgpt_local === 'object' ? extra.chatgpt_local : {}
   const effectiveStatus = account.effective_status || account.status || 'registered'
   const invalidReason = account.invalid_reason || ''
-  const autoPayState = extra.auto_pay_state || ''
-  const autoPayDiag = extra.auto_pay_diagnostic_code || ''
-  const autoPayPlan = extra.auto_pay_plan || ''
-  const autoPayProvider = extra.auto_pay_provider || ''
-  return { ...account, email, password, extra, sub2apiSync, chatgptLocal, effectiveStatus, invalidReason, autoPayState, autoPayDiag, autoPayPlan, autoPayProvider }
+  return { ...account, email, password, extra, sub2apiSync, chatgptLocal, effectiveStatus, invalidReason }
+}
+
+function extractRefreshToken(record: any): string {
+  try {
+    if (record?.extra && typeof record.extra === 'object') {
+      return String(record.extra.refresh_token || '').trim()
+    }
+    const extra = JSON.parse(record?.extra_json || '{}')
+    return String(extra.refresh_token || '').trim()
+  } catch {
+    return ''
+  }
 }
 
 function parseApiDate(value?: string) {
@@ -354,6 +329,31 @@ function PaymentLinkCell({ url }: { url?: string }) {
   )
 }
 
+function statusTagMeta(status: string) {
+  return { color: STATUS_COLORS[status] || 'default', label: status || 'registered' }
+}
+
+function useElementWidth<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null)
+  const [width, setWidth] = useState(0)
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver((entries) => {
+      const nextWidth = entries[0]?.contentRect?.width || 0
+      setWidth(nextWidth)
+    })
+
+    observer.observe(node)
+    setWidth(node.getBoundingClientRect().width)
+    return () => observer.disconnect()
+  }, [])
+
+  return [ref, width] as const
+}
+
 function formatStructuredText(value?: string) {
   if (!value) return ''
   const trimmed = String(value).trim()
@@ -503,7 +503,113 @@ function Sub2ApiSyncSummary({ sync }: { sync: any }) {
   )
 }
 
-function ActionMenu({ acc, onRefresh, actions }: { acc: any; onRefresh: () => void | Promise<void>; actions: any[] }) {
+function CompactStatusTags({
+  authState,
+  plan,
+  codexState,
+}: {
+  authState?: string
+  plan?: string
+  codexState?: string
+}) {
+  const authMeta = authStateMeta(authState)
+  const planTag = planMeta(plan)
+  const codexMeta = codexStateMeta(codexState)
+
+  return (
+    <div className="compact-pill-list">
+      <Tag color={authMeta.color}>{authMeta.label}</Tag>
+      <Tag color={planTag.color}>{planTag.label}</Tag>
+      <Tag color={codexMeta.color}>Codex {codexMeta.label}</Tag>
+    </div>
+  )
+}
+
+function AccountCard({
+  account,
+  selected,
+  onToggleSelect,
+  onOpenDetail,
+  onDelete,
+  actions,
+  onRefresh,
+}: {
+  account: any
+  selected: boolean
+  onToggleSelect: (checked: boolean) => void
+  onOpenDetail: () => void
+  onDelete: () => void
+  actions: any[]
+  onRefresh: () => void | Promise<void>
+}) {
+  const status = account.effectiveStatus || account.status || 'registered'
+  const statusMeta = statusTagMeta(status)
+  const sub2apiMeta = sub2ApiStateMeta(account.sub2apiSync || {})
+  const rt = extractRefreshToken(account)
+
+  return (
+    <div className={`account-card${selected ? ' account-card--selected' : ''}`}>
+      <div className="account-card__head">
+        <Checkbox checked={selected} onChange={(e) => onToggleSelect(e.target.checked)} />
+        <div className="account-card__identity" onClick={onOpenDetail}>
+          <Text className="mono-text" ellipsis={{ tooltip: account.email }}>
+            {account.email}
+          </Text>
+          <Text type="secondary" ellipsis={{ tooltip: account.user_id || `账号 #${account.id}` }}>
+            {account.user_id ? `UID: ${account.user_id}` : `账号 #${account.id}`}
+          </Text>
+        </div>
+        <ActionMenu acc={account} onRefresh={onRefresh} actions={actions} onDelete={onDelete} />
+      </div>
+
+      <div className="account-card__body">
+        <div className="account-card__row">
+          <span className="account-card__label">状态</span>
+          <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
+        </div>
+        {account.platform === 'chatgpt' ? (
+          <>
+            <div className="account-card__row account-card__row--stack">
+              <span className="account-card__label">本地状态</span>
+              <CompactStatusTags
+                authState={account.chatgptLocal?.auth?.state}
+                plan={account.chatgptLocal?.subscription?.plan}
+                codexState={account.chatgptLocal?.codex?.state}
+              />
+            </div>
+            <div className="account-card__row">
+              <span className="account-card__label">Sub2API</span>
+              <Tag color={sub2apiMeta.color}>{sub2apiMeta.label}</Tag>
+            </div>
+          </>
+        ) : null}
+        <div className="account-card__row">
+          <span className="account-card__label">RT</span>
+          {rt ? <Text className="mono-text">{`${rt.slice(0, 18)}...`}</Text> : <Text type="secondary">无</Text>}
+        </div>
+      </div>
+
+      <div className="account-card__foot">
+        <Button type="link" size="small" onClick={onOpenDetail}>
+          详情
+        </Button>
+        <PaymentLinkCell url={account.cashier_url} />
+      </div>
+    </div>
+  )
+}
+
+function ActionMenu({
+  acc,
+  onRefresh,
+  actions,
+  onDelete,
+}: {
+  acc: any
+  onRefresh: () => void | Promise<void>
+  actions: any[]
+  onDelete?: () => void | Promise<void>
+}) {
   const [resultOpen, setResultOpen] = useState(false)
   const [resultTitle, setResultTitle] = useState('')
   const [resultStatus, setResultStatus] = useState<'success' | 'error'>('success')
@@ -585,22 +691,51 @@ function ActionMenu({ acc, onRefresh, actions }: { acc: any; onRefresh: () => vo
     }
   }
 
-  const menuItems: MenuProps['items'] = actions.map((a) => ({
-    key: a.id,
-    label: a.label,
-  }))
+  const menuItems: MenuProps['items'] = [
+    ...actions.map((a) => ({
+      key: `action:${a.id}`,
+      label: a.label,
+    })),
+    ...(onDelete
+      ? [
+          ...(actions.length > 0 ? [{ type: 'divider' as const }] : []),
+          { key: 'delete', label: '删除账号', danger: true },
+        ]
+      : []),
+  ]
 
-  if (actions.length === 0) return null
+  if (menuItems.length === 0) return null
 
   return (
     <>
       <Dropdown
+        trigger={['click']}
         menu={{
           items: menuItems,
-          onClick: ({ key }) => handleAction(String(key)),
+          onClick: ({ key }) => {
+            const menuKey = String(key)
+            if (menuKey === 'delete') {
+              Modal.confirm({
+                title: '确认删除账号？',
+                content: acc?.email || `账号 #${acc?.id}`,
+                okText: '删除',
+                okButtonProps: { danger: true },
+                cancelText: '取消',
+                onOk: async () => {
+                  await onDelete?.()
+                },
+              })
+              return
+            }
+            if (menuKey.startsWith('action:')) {
+              void handleAction(menuKey.slice('action:'.length))
+            }
+          },
         }}
       >
-        <Button type="link" size="small" icon={<MoreOutlined />} />
+        <Button className="account-action-more" size="small" icon={<MoreOutlined />}>
+          更多
+        </Button>
       </Dropdown>
       <Modal
         title={resultTitle}
@@ -668,9 +803,31 @@ function ActionMenu({ acc, onRefresh, actions }: { acc: any; onRefresh: () => vo
   )
 }
 
+function filterPlatformActionsByConfig(platform: string, actions: any[], cfg: Record<string, any>) {
+  if (platform !== 'chatgpt') return actions
+
+  const hasSub2Api = Boolean(String(cfg.sub2api_api_url || '').trim() && String(cfg.sub2api_api_key || '').trim())
+  const hasTeamManager = Boolean(String(cfg.team_manager_url || '').trim() && String(cfg.team_manager_key || '').trim())
+  const hasCodexProxy = Boolean(String(cfg.codex_proxy_url || '').trim() && String(cfg.codex_proxy_key || '').trim())
+
+  return actions.filter((action: any) => {
+    const actionId = String(action?.id || '')
+
+    if (actionId === 'sync_cliproxyapi_status' || actionId === 'upload_cpa') return false
+    if (actionId === 'sync_sub2api_status' || actionId === 'upload_sub2api') return hasSub2Api
+    if (actionId === 'upload_tm') return hasTeamManager
+    if (actionId === 'upload_codex_proxy') return hasCodexProxy
+    if (actionId === 'payment_link') return true
+
+    return true
+  })
+}
+
 export default function Accounts() {
   const { platform } = useParams<{ platform: string }>()
   const { token } = theme.useToken()
+  const screens = useBreakpoint()
+  const [tableContainerRef, tableContainerWidth] = useElementWidth<HTMLDivElement>()
   const [currentPlatform, setCurrentPlatform] = useState(platform || 'trae')
   const [accounts, setAccounts] = useState<any[]>([])
   const [platformActions, setPlatformActions] = useState<any[]>([])
@@ -707,7 +864,7 @@ export default function Accounts() {
   const [importLoading, setImportLoading] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [registerLoading, setRegisterLoading] = useState(false)
-  const { task: globalTask, startTask: startGlobalTask } = useRegisterTask()
+  const { task: globalTask, startTask: startGlobalTask, clearTask: clearGlobalTask } = useRegisterTask()
   const [taskMeta, setTaskMeta] = useState<{ progress?: string; total?: number; started?: number; completed?: number; success?: number; skipped?: number; errors?: string[]; status?: string; worker_states?: any[] } | null>(null)
   const [statusSyncLoading, setStatusSyncLoading] = useState<
     'probe_selected' | 'probe_page' | 'probe_all' | 'sub2api_selected' | 'sub2api_page' | 'sub2api_all' | ''
@@ -724,6 +881,13 @@ export default function Accounts() {
       : mixProviderOptions.map((item) => item.value)
     : [registerMailProvider]
 
+  const viewMode: AccountsViewMode = useMemo(() => {
+    if (!screens.md) return 'card-list'
+    if (!screens.xl) return 'table-compact'
+    if (tableContainerWidth > 0 && tableContainerWidth < 1180) return 'table-compact'
+    return 'table-dense'
+  }, [screens.md, screens.xl, tableContainerWidth])
+
   useEffect(() => {
     if (platform) setCurrentPlatform(platform)
   }, [platform])
@@ -733,11 +897,28 @@ export default function Accounts() {
       .then((cfg) => {
         const options = resolveConfiguredMixOptions(cfg || {})
         setMixProviderOptions(options)
+        registerForm.setFieldsValue({
+          mail_provider: cfg.mail_provider || 'luckmail',
+          duckduckgo_email: cfg.duckduckgo_email || '',
+          duckduckgo_gmail_address: cfg.duckduckgo_gmail_address || '',
+          duckduckgo_gmail_app_password: cfg.duckduckgo_gmail_app_password || '',
+          duckduckgo_imap_host: cfg.duckduckgo_imap_host || 'imap.gmail.com',
+          duckduckgo_imap_port: cfg.duckduckgo_imap_port || '993',
+          duckduckgo_mailbox: cfg.duckduckgo_mailbox || 'INBOX',
+          duckduckgo_all_mailbox: cfg.duckduckgo_all_mailbox || '[Gmail]/All Mail',
+          duckduckgo_gmail_api_mode: cfg.duckduckgo_gmail_api_mode || 'imap',
+          duckduckgo_gmail_api_credentials: cfg.duckduckgo_gmail_api_credentials || '',
+          duckduckgo_gmail_api_token: cfg.duckduckgo_gmail_api_token || '',
+          duckduckgo_api_token: cfg.duckduckgo_api_token || '',
+          duckduckgo_alias_mode: cfg.duckduckgo_alias_mode || 'fixed',
+          duckduckgo_private_addresses: cfg.duckduckgo_private_addresses || '',
+          duckduckgo_alias_rotation: cfg.duckduckgo_alias_rotation || 'random',
+        })
       })
       .catch(() => {
         setMixProviderOptions(MIX_PROVIDER_OPTIONS.filter((item) => DEFAULT_PARALLEL_MAIL_MIX.includes(item.value)))
       })
-  }, [])
+  }, [registerForm])
 
   useEffect(() => {
     if (!registerMailProviderMixEnabled) return
@@ -767,6 +948,10 @@ export default function Accounts() {
         setTaskMeta(normalizeTaskMeta(t))
         if (t.status === 'done' || t.status === 'failed' || t.status === 'stopped') {
           if (timer) clearInterval(timer)
+          load()
+          window.setTimeout(() => {
+            closeRegisterTaskPanel()
+          }, 1200)
         }
       } catch { /* ignore */ }
     }
@@ -780,6 +965,7 @@ export default function Accounts() {
     detailForm.setFieldsValue({
       status: currentAccount.status,
       token: currentAccount.token,
+      cashier_url: currentAccount.cashier_url,
     })
   }, [detailModalOpen, currentAccount, detailForm])
 
@@ -787,6 +973,19 @@ export default function Accounts() {
     setPage(1)
     setSelectedRowKeys([])
   }, [currentPlatform, search, filterStatus])
+
+  const closeRegisterTaskPanel = useCallback(() => {
+    setRegisterModalOpen(false)
+    setRegisterModalCollapsed(false)
+    setTaskId(null)
+    setTaskMeta(null)
+    registerForm.resetFields()
+    try {
+      clearGlobalTask()
+    } catch {
+      /* ignored */
+    }
+  }, [clearGlobalTask, registerForm])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -806,21 +1005,27 @@ export default function Accounts() {
     } finally {
       setLoading(false)
     }
-  }, [currentPlatform, search, filterStatus, page])
+  }, [currentPlatform, search, filterStatus, page, pageSize])
 
   useEffect(() => {
     load()
   }, [load])
 
   useEffect(() => {
-    apiFetch(`/actions/${currentPlatform}`)
-      .then((data) => {
+    const status = taskMeta?.status
+    if (!taskId || (status !== 'done' && status !== 'failed' && status !== 'stopped')) return
+    load()
+    const timer = window.setTimeout(() => {
+      closeRegisterTaskPanel()
+    }, 1200)
+    return () => window.clearTimeout(timer)
+  }, [closeRegisterTaskPanel, load, taskId, taskMeta?.status])
+
+  useEffect(() => {
+    Promise.all([apiFetch(`/actions/${currentPlatform}`), apiFetch('/config')])
+      .then(([data, cfg]) => {
         const actions = Array.isArray(data.actions) ? data.actions : []
-        const filteredActions =
-          currentPlatform === 'chatgpt'
-            ? actions.filter((action: any) => action.id !== 'sync_cliproxyapi_status' && action.id !== 'upload_cpa')
-            : actions
-        setPlatformActions(filteredActions)
+        setPlatformActions(filterPlatformActionsByConfig(currentPlatform, actions, cfg || {}))
       })
       .catch(() => setPlatformActions([]))
   }, [currentPlatform])
@@ -843,12 +1048,7 @@ export default function Accounts() {
   }
 
   const getRefreshToken = (record: any): string => {
-    try {
-      const extra = JSON.parse(record.extra_json || '{}')
-      return String(extra.refresh_token || '').trim()
-    } catch {
-      return ''
-    }
+    return extractRefreshToken(record)
   }
 
   const exportCsv = () => {
@@ -914,29 +1114,30 @@ export default function Accounts() {
     await load()
   }
 
-  const handleRecoverFailedAccounts = async (scope: 'selected' | 'page' | 'all') => {
-    let targetIds: number[] = []
+  const getInvalidAccountIds = async (scope: 'selected' | 'page' | 'all') => {
     const isInvalid = (item: any) => (item.effective_status || item.effectiveStatus || item.status) === 'invalid'
     if (scope === 'selected') {
-      targetIds = accounts
+      return accounts
         .filter((item) => selectedRowKeys.includes(item.id) && isInvalid(item))
         .map((item) => Number(item.id))
-    } else if (scope === 'page') {
-      targetIds = accounts.filter(isInvalid).map((item) => Number(item.id))
-    } else {
-      const data = await apiFetch(
-        `/accounts?${new URLSearchParams({
-          platform: currentPlatform,
-          page: '1',
-          page_size: '1000',
-          ...(search ? { email: search } : {}),
-          status: 'invalid',
-        })}`,
-      )
-      targetIds = (data.items || [])
-        .map((item: any) => Number(item.id))
     }
+    if (scope === 'page') {
+      return accounts.filter(isInvalid).map((item) => Number(item.id))
+    }
+    const data = await apiFetch(
+      `/accounts?${new URLSearchParams({
+        platform: currentPlatform,
+        page: '1',
+        page_size: '1000',
+        ...(search ? { email: search } : {}),
+        status: 'invalid',
+      })}`,
+    )
+    return (data.items || []).map((item: any) => Number(item.id))
+  }
 
+  const handleRecoverFailedAccounts = async (scope: 'selected' | 'page' | 'all') => {
+    const targetIds = await getInvalidAccountIds(scope)
     if (targetIds.length === 0) {
       message.warning('没有可恢复的失败账号')
       return
@@ -945,28 +1146,7 @@ export default function Accounts() {
   }
 
   const handleDeleteFailedAccounts = async (scope: 'selected' | 'page' | 'all') => {
-    let targetIds: number[] = []
-    const isInvalid = (item: any) => (item.effective_status || item.effectiveStatus || item.status) === 'invalid'
-    if (scope === 'selected') {
-      targetIds = accounts
-        .filter((item) => selectedRowKeys.includes(item.id) && isInvalid(item))
-        .map((item) => Number(item.id))
-    } else if (scope === 'page') {
-      targetIds = accounts.filter(isInvalid).map((item) => Number(item.id))
-    } else {
-      const data = await apiFetch(
-        `/accounts?${new URLSearchParams({
-          platform: currentPlatform,
-          page: '1',
-          page_size: '1000',
-          ...(search ? { email: search } : {}),
-          status: 'invalid',
-        })}`,
-      )
-      targetIds = (data.items || [])
-        .map((item: any) => Number(item.id))
-    }
-
+    const targetIds = await getInvalidAccountIds(scope)
     if (targetIds.length === 0) {
       message.warning('没有可删除的失败账号')
       return
@@ -1012,75 +1192,7 @@ export default function Accounts() {
     try {
       const cfg = await apiFetch('/config')
       const executorType = normalizeExecutorForPlatform(currentPlatform, cfg.default_executor)
-      const registerExtra = {
-        mail_provider: values.mail_provider || cfg.mail_provider || 'luckmail',
-        mail_provider_mix: values.mail_provider_mix_enabled ? values.mail_provider_mix : [],
-        laoudo_auth: cfg.laoudo_auth,
-        laoudo_email: cfg.laoudo_email,
-        laoudo_account_id: cfg.laoudo_account_id,
-        gptmail_base_url: cfg.gptmail_base_url,
-        gptmail_api_key: cfg.gptmail_api_key,
-        gptmail_domain: cfg.gptmail_domain,
-        maliapi_base_url: cfg.maliapi_base_url,
-        maliapi_api_key: cfg.maliapi_api_key,
-        maliapi_domain: cfg.maliapi_domain,
-        maliapi_auto_domain_strategy: cfg.maliapi_auto_domain_strategy,
-        yescaptcha_key: cfg.yescaptcha_key,
-        moemail_api_url: cfg.moemail_api_url,
-        moemail_api_key: cfg.moemail_api_key,
-        skymail_api_base: cfg.skymail_api_base,
-        skymail_token: cfg.skymail_token,
-        skymail_domain: cfg.skymail_domain,
-        duckmail_address: cfg.duckmail_address,
-        duckmail_password: cfg.duckmail_password,
-        duckmail_api_url: cfg.duckmail_api_url,
-        duckmail_provider_url: cfg.duckmail_provider_url,
-        duckmail_bearer: cfg.duckmail_bearer,
-        freemail_api_url: cfg.freemail_api_url,
-        freemail_admin_token: cfg.freemail_admin_token,
-        freemail_username: cfg.freemail_username,
-        freemail_password: cfg.freemail_password,
-        mail2925_login_name: cfg.mail2925_login_name,
-        mail2925_password: cfg.mail2925_password,
-        mail2925_alias_mode: cfg.mail2925_alias_mode,
-        mail2925_domain: cfg.mail2925_domain,
-        cfworker_api_url: cfg.cfworker_api_url,
-        cfworker_admin_token: cfg.cfworker_admin_token,
-        cfworker_custom_auth: cfg.cfworker_custom_auth,
-        cfworker_domain: cfg.cfworker_domain,
-        cfworker_subdomain: cfg.cfworker_subdomain,
-        cfworker_random_subdomain: parseBooleanConfigValue(cfg.cfworker_random_subdomain),
-        cfworker_fingerprint: cfg.cfworker_fingerprint,
-        smsbower_api_key: cfg.smsbower_api_key,
-        sms_provider: cfg.sms_provider,
-        sim5_api_key: cfg.sim5_api_key,
-        herosms_api_key: cfg.herosms_api_key,
-        smsbower_country: cfg.smsbower_country,
-        smsbower_type: cfg.smsbower_type,
-        smsbower_max_price: cfg.smsbower_max_price,
-        smsbower_min_price: cfg.smsbower_min_price,
-        smsbower_price_steps: cfg.smsbower_price_steps,
-        smsbower_phone_attempts: cfg.smsbower_phone_attempts,
-        smsbower_add_phone_send_attempts: cfg.smsbower_add_phone_send_attempts,
-        smsbower_otp_timeout_seconds: cfg.smsbower_otp_timeout_seconds,
-        smsbower_code_attempts: cfg.smsbower_code_attempts,
-        smsbower_provider_ids: cfg.smsbower_provider_ids,
-        smsbower_except_provider_ids: cfg.smsbower_except_provider_ids,
-        luckmail_base_url: cfg.luckmail_base_url,
-        luckmail_api_key: cfg.luckmail_api_key,
-        luckmail_email_type: cfg.luckmail_email_type,
-        luckmail_domain: cfg.luckmail_domain,
-        ...(values.mail2925_login_name ? { mail2925_login_name: values.mail2925_login_name } : {}),
-        ...(values.mail2925_password ? { mail2925_password: values.mail2925_password } : {}),
-        ...(values.mail2925_alias_mode ? { mail2925_alias_mode: values.mail2925_alias_mode } : {}),
-        ...(values.mail2925_domain ? { mail2925_domain: values.mail2925_domain } : {}),
-        ...(values.cfworker_api_url ? { cfworker_api_url: values.cfworker_api_url } : {}),
-        ...(values.cfworker_admin_token ? { cfworker_admin_token: values.cfworker_admin_token } : {}),
-        ...(values.cfworker_custom_auth ? { cfworker_custom_auth: values.cfworker_custom_auth } : {}),
-        ...(values.luckmail_base_url ? { luckmail_base_url: values.luckmail_base_url } : {}),
-        ...(values.luckmail_api_key ? { luckmail_api_key: values.luckmail_api_key } : {}),
-        ...(values.smsbower_add_phone_send_attempts ? { smsbower_add_phone_send_attempts: values.smsbower_add_phone_send_attempts } : {}),
-      }
+      const registerExtra = buildRegisterExtra(cfg, values)
       const chatgptRegistrationRequestAdapter =
         buildChatGPTRegistrationRequestAdapter(
           currentPlatform,
@@ -1549,6 +1661,40 @@ export default function Accounts() {
     },
   )
 
+  const visibleColumns = columns
+    .filter((column) => {
+      if (['password', 'created_at'].includes(String(column.key))) return false
+      if (viewMode === 'table-dense') return true
+      if (viewMode === 'table-compact') {
+        return !['auto_pay_state'].includes(String(column.key))
+      }
+      return false
+    })
+    .map((column) => {
+      if (String(column.key) !== 'action') return column
+      return {
+        ...column,
+        width: viewMode === 'table-dense' ? 150 : 128,
+        fixed: isChatgptPlatform && viewMode === 'table-dense' ? 'right' : undefined,
+        render: (_: any, record: any) => (
+          <div className="account-row-actions">
+            <Button className="account-action-primary" type="primary" size="small" onClick={() => { void openAccountDetail(record) }}>
+              详情
+            </Button>
+            <ActionMenu acc={record} onRefresh={load} actions={platformActions} onDelete={() => handleDelete(record.id)} />
+          </div>
+        ),
+      }
+    })
+
+  const tableScrollX = isChatgptPlatform
+    ? viewMode === 'table-dense'
+      ? 1520
+      : 1080
+    : 1000
+
+  const drawerWidth = screens.xl ? 780 : screens.lg ? 680 : '100%'
+
   const statusSyncMenuItems: MenuProps['items'] = [
     {
       key: 'probe:selected',
@@ -1583,19 +1729,19 @@ export default function Accounts() {
   ]
 
   return (
-    <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <Space>
+    <div className="page-container accounts-page">
+      <div className="accounts-toolbar">
+        <div className="accounts-toolbar__primary">
           <Input.Search
             placeholder="搜索邮箱..."
             allowClear
             onSearch={setSearch}
-            style={{ width: 200 }}
+            className="accounts-toolbar__search"
           />
           <Select
             placeholder="状态筛选"
             allowClear
-            style={{ width: 140 }}
+            className="accounts-toolbar__filter"
             onChange={setFilterStatus}
             options={[
               { value: 'group:success', label: '正常账号' },
@@ -1611,8 +1757,8 @@ export default function Accounts() {
           {selectedRowKeys.length > 0 && (
             <Text type="success">已选 {selectedRowKeys.length} 个</Text>
           )}
-        </Space>
-        <Space>
+        </div>
+        <div className="accounts-toolbar__actions">
           {currentPlatform === 'chatgpt' && (
             <Dropdown
               trigger={['click']}
@@ -1698,12 +1844,59 @@ export default function Accounts() {
           <Button icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>新增</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setRegisterModalOpen(true)}>注册</Button>
           <Button icon={<ReloadOutlined spin={loading} />} onClick={load} />
-        </Space>
+        </div>
       </div>
 
+      <Card bordered={false} className={`data-table-card accounts-table-card accounts-table-card--${viewMode}`}>
+      <div className="accounts-table-wrap" ref={tableContainerRef}>
+      {viewMode === 'card-list' ? (
+        <>
+          <div className="accounts-card-grid">
+            {accounts.map((account) => (
+              <AccountCard
+                key={account.id}
+                account={account}
+                selected={selectedRowKeys.includes(account.id)}
+                onToggleSelect={(checked) => {
+                  setSelectedRowKeys((prev) => {
+                    const exists = prev.includes(account.id)
+                    if (checked && !exists) return [...prev, account.id]
+                    if (!checked && exists) return prev.filter((key) => key !== account.id)
+                    return prev
+                  })
+                }}
+                onOpenDetail={() => { void openAccountDetail(account) }}
+                onDelete={() => { void handleDelete(account.id) }}
+                actions={platformActions}
+                onRefresh={load}
+              />
+            ))}
+          </div>
+          <div className="accounts-card-pagination">
+            <Pagination
+              current={page}
+              pageSize={pageSize}
+              total={total}
+              showSizeChanger
+              pageSizeOptions={['20', '50', '100']}
+              onChange={(nextPage, nextSize) => {
+                setPage(nextPage)
+                if (nextSize && nextSize !== pageSize) {
+                  setPageSize(nextSize)
+                  try {
+                    localStorage.setItem('accounts_page_size', String(nextSize))
+                  } catch {
+                    /* ignored */
+                  }
+                }
+              }}
+            />
+          </div>
+        </>
+      ) : (
       <Table
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns}
         dataSource={accounts}
         loading={loading}
         size="middle"
@@ -1711,13 +1904,14 @@ export default function Accounts() {
           selectedRowKeys,
           onChange: setSelectedRowKeys,
         }}
-        pagination={{
-          current: page,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          showQuickJumper: true,
-          pageSizeOptions: ['20', '50', '100'],
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              position: ['topRight'],
+              showSizeChanger: true,
+              showQuickJumper: true,
+              pageSizeOptions: ['20', '50', '100'],
           showTotal: (t, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${t} 个账号`,
           onChange: (nextPage, nextSize) => {
             setPage(nextPage)
@@ -1740,11 +1934,14 @@ export default function Accounts() {
             }
           },
         }}
-        scroll={{ x: isChatgptPlatform ? 1520 : 1000 }}
+        scroll={{ x: tableScrollX }}
         onRow={(record) => ({
           onDoubleClick: () => { void openAccountDetail(record) },
         })}
       />
+      )}
+      </div>
+      </Card>
 
       {/* 收起态：用固定定位的小卡片代替 Modal，不阻挡页面交互 */}
       {registerModalOpen && registerModalCollapsed && taskId && (() => {
@@ -1789,7 +1986,7 @@ export default function Accounts() {
                 onClick={() => setRegisterModalCollapsed(false)}>
                 展开
               </Button>
-              {isTaskDone ? (
+              {false ? (
                 <Button size="small" type="text" style={{ color: '#f87171', fontSize: 12 }} onClick={() => { setRegisterModalOpen(false); setRegisterModalCollapsed(false); setTaskId(null); setTaskMeta(null); registerForm.resetFields(); }}>
                   关闭
                 </Button>
@@ -1867,7 +2064,7 @@ export default function Accounts() {
           {/* 状态文字 */}
           {isTaskDone ? (
             <div 
-              onClick={() => { setRegisterModalOpen(false); setRegisterModalCollapsed(false); setTaskId(null); setTaskMeta(null); registerForm.resetFields(); }}
+              onClick={() => { closeRegisterTaskPanel() }}
               style={{
               marginTop: 10, textAlign: 'center', fontSize: 12, fontWeight: 600, padding: '5px 0', borderRadius: 6,
               color: taskMeta?.status === 'done' ? '#4ade80' : taskMeta?.status === 'failed' ? '#f87171' : '#fbbf24',
@@ -1957,6 +2154,7 @@ export default function Accounts() {
                   { value: 'gptmail', label: 'GPTMail' },
                   { value: 'skymail', label: 'SkyMail' },
                   { value: 'duckmail', label: 'DuckMail' },
+                  { value: 'duckduckgo', label: 'DuckDuckGo' },
                   { value: 'freemail', label: 'Freemail' },
                   { value: 'moemail', label: 'MoeMail' },
                   { value: 'opentrashmail', label: 'OpenTrashMail' },
@@ -2071,7 +2269,7 @@ export default function Accounts() {
             </Form.Item>
           </Form>
         ) : (
-          <TaskLogPanel taskId={taskId} taskMeta={taskMeta || undefined} onDone={() => { load(); }} />
+          <TaskLogPanel taskId={taskId} taskMeta={taskMeta || undefined} onDone={() => { load(); closeRegisterTaskPanel(); }} />
         )}
       </Modal>
 
@@ -2128,7 +2326,7 @@ export default function Accounts() {
 
       <Modal
         title="账号详情"
-        open={detailModalOpen}
+        open={false && detailModalOpen}
         onCancel={() => setDetailModalOpen(false)}
         onOk={handleDetailSave}
         confirmLoading={detailLoading}
@@ -2214,6 +2412,113 @@ export default function Accounts() {
           </>
         )}
       </Modal>
+      <Drawer
+        title="账号详情"
+        open={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        destroyOnHidden={false}
+        maskClosable={false}
+        width={drawerWidth}
+        styles={{ body: { paddingBottom: 120 } }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button onClick={() => setDetailModalOpen(false)}>关闭</Button>
+            <Button type="primary" loading={detailLoading} onClick={() => void handleDetailSave()}>
+              保存
+            </Button>
+          </div>
+        }
+      >
+        {currentAccount && (
+          <>
+            {currentAccount.effectiveStatus === 'invalid' && currentAccount.status !== 'invalid' ? (
+              <Alert
+                type="warning"
+                showIcon
+                className="accounts-detail-alert"
+                message={`探测判定失效：${INVALID_REASON_LABELS[currentAccount.invalidReason] || currentAccount.invalidReason || '未知原因'}`}
+                description="数据库状态未标记为失效，但本地探测或远端同步检测到此账号已不可用。"
+              />
+            ) : null}
+            <div className="accounts-detail-hero">
+              <div className="accounts-detail-hero__main">
+                <Text className="mono-text" ellipsis={{ tooltip: currentAccount.email }}>
+                  {currentAccount.email}
+                </Text>
+                <Text type="secondary" ellipsis={{ tooltip: currentAccount.user_id || `账号 #${currentAccount.id}` }}>
+                  {currentAccount.user_id ? `UID: ${currentAccount.user_id}` : `账号 #${currentAccount.id}`}
+                </Text>
+              </div>
+              <div className="accounts-detail-hero__meta">
+                <Tag color={statusTagMeta(currentAccount.effectiveStatus || currentAccount.status).color}>
+                  {statusTagMeta(currentAccount.effectiveStatus || currentAccount.status).label}
+                </Tag>
+                {currentPlatform === 'chatgpt' ? (
+                  <>
+                    <CompactStatusTags
+                      authState={currentAccount.chatgptLocal?.auth?.state}
+                      plan={currentAccount.chatgptLocal?.subscription?.plan}
+                      codexState={currentAccount.chatgptLocal?.codex?.state}
+                    />
+                    <Tag color={sub2ApiStateMeta(currentAccount.sub2apiSync || {}).color}>
+                      Sub2API {sub2ApiStateMeta(currentAccount.sub2apiSync || {}).label}
+                    </Tag>
+                  </>
+                ) : null}
+              </div>
+            </div>
+            <div className="accounts-detail-grid">
+              <DetailSection title="基础信息">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <SummaryField label="邮箱" value={currentAccount.email} />
+                  <SummaryField label="UID" value={currentAccount.user_id || `账号 #${currentAccount.id}`} />
+                  <SummaryField label="密码" value={currentAccount.password} code />
+                  <SummaryField label="创建时间" value={formatSyncTime(currentAccount.created_at)} />
+                </div>
+              </DetailSection>
+              <DetailSection title="账号设置">
+                <Form form={detailForm} layout="vertical" initialValues={currentAccount}>
+                  <Form.Item name="status" label="状态">
+                    <Select
+                      options={[
+                        { value: 'registered', label: '已注册' },
+                        { value: 'trial', label: '试用中' },
+                        { value: 'subscribed', label: '已订阅' },
+                        { value: 'expired', label: '已过期' },
+                        { value: 'invalid', label: '已失效' },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item name="token" label="Access Token">
+                    <Input.TextArea rows={3} style={{ fontFamily: 'monospace' }} />
+                  </Form.Item>
+                  <Form.Item name="cashier_url" label="Plus 长链">
+                    <Input.TextArea rows={3} style={{ fontFamily: 'monospace' }} />
+                  </Form.Item>
+                </Form>
+              </DetailSection>
+            </div>
+            {currentPlatform === 'chatgpt' ? (
+              <DetailSection title="本地状态">
+                {currentAccount.chatgptLocal && Object.keys(currentAccount.chatgptLocal).length > 0 ? (
+                  <LocalProbeSummary probe={currentAccount.chatgptLocal} />
+                ) : (
+                  <Text type="secondary">还没有本地探测结果。</Text>
+                )}
+              </DetailSection>
+            ) : null}
+            {currentPlatform === 'chatgpt' ? (
+              <DetailSection title="Sub2API 状态">
+                {currentAccount.sub2apiSync && Object.keys(currentAccount.sub2apiSync).length > 0 ? (
+                  <Sub2ApiSyncSummary sync={currentAccount.sub2apiSync} />
+                ) : (
+                  <Text type="secondary">还没有 Sub2API 同步结果。</Text>
+                )}
+              </DetailSection>
+            ) : null}
+          </>
+        )}
+      </Drawer>
     </div>
   )
 }

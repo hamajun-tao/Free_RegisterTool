@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Collapse, Progress, message, Space, Tooltip } from 'antd'
+import { Button, Collapse, Progress, message, Space, Tooltip, theme } from 'antd'
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -334,6 +334,9 @@ interface TaskLogPanelProps {
 type TaskTerminalStatus = 'idle' | 'done' | 'failed' | 'stopped'
 
 export function TaskLogPanel({ taskId, taskMeta, onDone }: TaskLogPanelProps) {
+  const { token: t } = theme.useToken()
+  const isDark = t.colorBgLayout === '#000000' || t.colorBgLayout === '#141414'
+
   const [lines, setLines] = useState<string[]>([])
   const [error, setError] = useState('')
   const [terminalStatus, setTerminalStatus] = useState<TaskTerminalStatus>('idle')
@@ -557,8 +560,11 @@ export function TaskLogPanel({ taskId, taskMeta, onDone }: TaskLogPanelProps) {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', gap: 10,
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+      background: isDark
+        ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
+        : t.colorBgContainer,
       borderRadius: 12, padding: '16px 18px',
+      border: isDark ? undefined : `1px solid ${t.colorBorderSecondary}`,
     }}>
 
       {/* ============ 统计条 ============ */}

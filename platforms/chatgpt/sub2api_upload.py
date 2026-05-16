@@ -177,12 +177,16 @@ def _resolve_sub2api_config(
 
 
 def _sub2api_headers(api_url: str, api_key: str) -> dict[str, str]:
-    return {
+    headers = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/plain, */*",
         "Referer": f"{api_url.rstrip('/')}/admin/accounts",
-        "x-api-key": api_key,
     }
+    if str(api_key or "").startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        headers["x-api-key"] = api_key
+    return headers
 
 
 def _extract_sub2api_items(payload: Any) -> list[dict[str, Any]]:

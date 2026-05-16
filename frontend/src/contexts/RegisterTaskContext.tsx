@@ -105,6 +105,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
   const subscribedIdRef = useRef('')
   const cashierShownRef = useRef<Set<string>>(new Set())
   const restoreGenerationRef = useRef(0)
+  const clearedRef = useRef(false)
 
   const closeStreams = useCallback(() => {
     if (eventSourceRef.current) {
@@ -149,10 +150,10 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
 
   const fallbackTick = useCallback(
     async (id: string) => {
-      if (!id || subscribedIdRef.current !== id) return
+      if (clearedRef.current || !id || subscribedIdRef.current !== id) return
       try {
         const t: RegisterTask = await apiFetch(`/tasks/${id}?include_logs=0`)
-        if (subscribedIdRef.current !== id) return
+        if (clearedRef.current || subscribedIdRef.current !== id) return
         setTask(t)
         if (isTaskFinished(t)) {
           handleFinalSnapshot(t)
@@ -162,7 +163,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
       } catch {
         /* ignored */
       }
-      if (subscribedIdRef.current === id) {
+      if (!clearedRef.current && subscribedIdRef.current === id) {
         fallbackTimerRef.current = setTimeout(
           () => fallbackTick(id),
           FALLBACK_POLL_INTERVAL_MS,
@@ -174,7 +175,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
 
   const subscribe = useCallback(
     (id: string) => {
-      if (!id) return
+      if (clearedRef.current || !id) return
       closeStreams()
       subscribedIdRef.current = id
       setPolling(true)
@@ -189,7 +190,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
         eventSourceRef.current = es
 
         es.onmessage = (ev) => {
-          if (subscribedIdRef.current !== id) return
+          if (clearedRef.current || subscribedIdRef.current !== id) return
           try {
             const data = JSON.parse(ev.data || '{}') as Partial<RegisterTask> & {
               gone?: boolean
@@ -212,7 +213,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
         }
 
         es.onerror = () => {
-          if (subscribedIdRef.current !== id) return
+          if (clearedRef.current || subscribedIdRef.current !== id) return
           try {
             es.close()
           } catch {
@@ -233,7 +234,11 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
   const startTask = useCallback(
     (initial: RegisterTask) => {
       const id = initial?.task_id || initial?.id
-      if (!id) return
+      if (!id) {
+        console.error('startTask: no task_id in response', initial)
+        return
+      }
+      clearedRef.current = false
       const normalizedId = String(id)
       cashierShownRef.current = new Set()
       setTask(initial)
@@ -245,6 +250,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
   )
 
   const clearTask = useCallback(() => {
+    clearedRef.current = true
     const dismissedId = String(task?.task_id || task?.id || '').trim()
     stop()
     setTask(null)
@@ -271,6 +277,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
             return
           }
           if (dismissedId && dismissedId === activeId) return
+          if (clearedRef.current) return
           setTask(t)
           subscribe(activeId)
         } catch {
@@ -290,6 +297,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
         ).trim()
         if (!latestActiveTaskId) return
         if (dismissedId && dismissedId === latestActiveTaskId) return
+        if (clearedRef.current) return
         setTask(latestActiveTask)
         writeLocalStorage(ACTIVE_TASK_KEY, latestActiveTaskId)
         subscribe(latestActiveTaskId)
@@ -304,7 +312,7 @@ export function RegisterTaskProvider({ children }: { children: ReactNode }) {
   }, [subscribe])
 
   useEffect(() => {
-    if (paused) {
+    if (paused || clearedRef.current) {
       closeStreams()
       return
     }

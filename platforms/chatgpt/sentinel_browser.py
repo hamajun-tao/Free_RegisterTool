@@ -288,10 +288,28 @@ def _build_account_api_request(form_type: str, form_value: str, current_url: str
         request["body"] = json.dumps({"phone_number": form_value})
     elif form_type_norm == "phone_validate":
         request["endpoint"] = "https://auth.openai.com/api/accounts/phone-otp/validate"
-        request["body"] = json.dumps({"code": form_value})
+        parsed_body = None
+        if isinstance(form_value, str):
+            try:
+                parsed_body = json.loads(form_value)
+            except Exception:
+                parsed_body = None
+        if isinstance(parsed_body, dict):
+            request["body"] = json.dumps(parsed_body)
+        else:
+            request["body"] = json.dumps({"code": form_value})
     elif form_type_norm == "phone_otp_resend":
         request["endpoint"] = "https://auth.openai.com/api/accounts/phone-otp/resend"
-        request["body"] = str(form_value or "{}")
+        parsed_body = None
+        if isinstance(form_value, str):
+            try:
+                parsed_body = json.loads(form_value)
+            except Exception:
+                parsed_body = None
+        if isinstance(parsed_body, dict):
+            request["body"] = json.dumps(parsed_body)
+        else:
+            request["body"] = str(form_value or "{}")
 
     return request
 
@@ -628,7 +646,11 @@ def warmup_page_and_extract_cookies(
     if not result:
         return {}
     raw = result.get("cookies", []) or []
-    return {cookie.get("name", ""): cookie.get("value", "") for cookie in raw if cookie.get("name")}
+    cookies = {cookie.get("name", ""): cookie.get("value", "") for cookie in raw if cookie.get("name")}
+    if result.get("browser_error_category"):
+        cookies["_browser_error"] = result.get("browser_error", "")
+        cookies["_browser_error_category"] = result.get("browser_error_category", "")
+    return cookies
 
 
 def browser_form_submit(
@@ -686,6 +708,7 @@ def browser_form_submit(
             navigation_chain = _record_navigation(page)
 
             logger("Browser Form: loading page and waiting for Cloudflare...")
+            api_timeout_ms = max(10000, min(timeout_ms, 30000))
             initial_response = page.goto(page_url, wait_until="domcontentloaded", timeout=timeout_ms)
             challenge_passed = False
             try:
@@ -705,15 +728,19 @@ def browser_form_submit(
 
             from .human_behavior_simulator import HumanBehaviorSimulator
             # 使用行为模拟器带来真实的页面浏览停顿，代替写死的 1500ms
+            logger("Browser Form: page observation...")
             HumanBehaviorSimulator().page_load_observation()
+            logger("Browser Form: page observation done")
 
             sentinel_result = None
             if flow_name:
+                logger(f"Browser Form: waiting for SentinelSDK ({flow_name})...")
                 try:
                     page.wait_for_function(
                         "() => typeof window.SentinelSDK !== 'undefined' && typeof window.SentinelSDK.token === 'function'",
                         timeout=min(timeout_ms, 30000),
                     )
+                    logger(f"Browser Form: requesting Sentinel token ({flow_name})...")
                     sentinel_result = page.evaluate(
                         """
                         async ({ flow }) => {
@@ -966,17 +993,24 @@ def browser_form_submit(
             try:
                 logger(f"Browser Form: API {api_method} {_safe_endpoint_path(api_endpoint)}")
                 if api_method == "GET":
-                    api_response = context.request.get(api_endpoint, headers=api_headers)
+                    api_response = context.request.get(
+                        api_endpoint,
+                        headers=api_headers,
+                        timeout=api_timeout_ms,
+                    )
                 else:
                     api_response = context.request.post(
                         api_endpoint,
                         headers=api_headers,
                         data=api_body,
+                        timeout=api_timeout_ms,
                     )
                 response_status = api_response.status
                 response_body = api_response.text()
             except Exception as exc:
-                logger(f"Browser Form: context.request failed: {exc}")
+                logger(
+                    f"Browser Form: context.request failed after timeout={api_timeout_ms}ms: {exc}"
+                )
                 return {
                     "status": -1,
                     "body": str(exc),
@@ -1155,7 +1189,37 @@ def _run_browser_for_page(
                 "storage_state": storage_state,
             }
         except Exception as exc:
-            logger(f"Browser exception: {exc}")
-            return None
+            exc_msg = str(exc)
+            exc_lower = exc_msg.lower()
+            is_connection_error = any(
+                kw in exc_lower
+                for kw in (
+                    "err_connection_reset",
+                    "connection was reset",
+                    "err_connection_refused",
+                    "err_proxy_connection_failed",
+                    "err_tunnel_connection_failed",
+                    "net::err_",
+                    "curl: (56)",
+                    "recv failure",
+                )
+            )
+            is_ssl_error = any(
+                kw in exc_lower
+                for kw in ("err_ssl_", "ssl_error", "certificate", "tls_")
+            )
+            error_category = "connection" if is_connection_error else ("ssl" if is_ssl_error else "unknown")
+            logger(f"Browser exception [{error_category}]: {exc_msg[:200]}")
+            return {
+                "sentinel_token": None,
+                "cookies": [],
+                "cookies_count": 0,
+                "challenge_passed": False,
+                "final_url": "",
+                "navigation_chain": [],
+                "storage_state": None,
+                "browser_error": exc_msg[:300],
+                "browser_error_category": error_category,
+            }
         finally:
             browser.close()

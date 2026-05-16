@@ -11,6 +11,7 @@ import {
   Space,
   Typography,
   Descriptions,
+  message,
 } from 'antd'
 import {
   PlayCircleOutlined,
@@ -26,49 +27,28 @@ import { buildChatGPTRegistrationRequestAdapter } from '@/lib/chatgptRegistratio
 import { getExecutorOptions, normalizeExecutorForPlatform } from '@/lib/platformExecutorOptions'
 import { apiFetch } from '@/lib/utils'
 import { useRegisterTask } from '@/contexts/RegisterTaskContext'
+import { buildRegisterExtra } from '@/lib/registerConfigMapper'
+import { MIX_PROVIDER_OPTIONS, DEFAULT_PARALLEL_MAIL_MIX, resolveConfiguredMixOptions } from '@/lib/mailProviders'
 
 const { Text } = Typography
-const DEFAULT_PARALLEL_MAIL_MIX = ['luckmail', 'cfworker', 'mail2925']
-const MIX_PROVIDER_OPTIONS = [
-  { value: 'luckmail', label: 'LuckMail' },
-  { value: 'cfworker', label: 'CF Worker' },
-  { value: 'mail2925', label: '2925 Mail' },
-  { value: 'moemail', label: 'MoeMail (sall.cc)' },
-  { value: 'tempmail_lol', label: 'TempMail.lol' },
-  { value: 'skymail', label: 'SkyMail (CloudMail)' },
-  { value: 'maliapi', label: 'YYDS Mail / MaliAPI' },
-  { value: 'gptmail', label: 'GPTMail' },
-  { value: 'opentrashmail', label: 'OpenTrashMail' },
-  { value: 'duckmail', label: 'DuckMail' },
-  { value: 'freemail', label: 'Freemail' },
-  { value: 'laoudo', label: 'Laoudo' },
-]
+
+function isTaskFinished(t: any): boolean {
+  if (!t) return false
+  const s = t.status
+  return s === 'done' || s === 'failed' || s === 'stopped'
+}
 
 export default function RegisterTaskPage() {
   const [form] = Form.useForm()
   const [mixProviderOptions, setMixProviderOptions] = useState(MIX_PROVIDER_OPTIONS)
+  const [submitting, setSubmitting] = useState(false)
   const { task, polling, startTask, clearTask } = useRegisterTask()
   const { mode: chatgptRegistrationMode, setMode: setChatgptRegistrationMode } =
     usePersistentChatGPTRegistrationMode()
 
   useEffect(() => {
     apiFetch('/config').then((cfg) => {
-      const configuredProviders = MIX_PROVIDER_OPTIONS.filter((item) => {
-        if (item.value === 'luckmail') return !!String(cfg.luckmail_api_key || '').trim()
-        if (item.value === 'cfworker') return !!String(cfg.cfworker_api_url || '').trim()
-        if (item.value === 'mail2925') return !!String(cfg.mail2925_login_name || '').trim() && !!String(cfg.mail2925_password || '').trim()
-        if (item.value === 'moemail') return !!String(cfg.moemail_api_url || '').trim() && !!String(cfg.moemail_api_key || '').trim()
-        if (item.value === 'tempmail_lol') return true
-        if (item.value === 'skymail') return !!String(cfg.skymail_api_base || '').trim() && !!String(cfg.skymail_token || '').trim()
-        if (item.value === 'maliapi') return !!String(cfg.maliapi_base_url || '').trim() && !!String(cfg.maliapi_api_key || '').trim()
-        if (item.value === 'gptmail') return !!String(cfg.gptmail_base_url || '').trim() && !!String(cfg.gptmail_api_key || '').trim()
-        if (item.value === 'opentrashmail') return !!String(cfg.opentrashmail_api_url || '').trim()
-        if (item.value === 'duckmail') return !!String(cfg.duckmail_api_url || '').trim() || !!String(cfg.duckmail_provider_url || '').trim()
-        if (item.value === 'freemail') return !!String(cfg.freemail_api_url || '').trim()
-        if (item.value === 'laoudo') return !!String(cfg.laoudo_email || '').trim() && !!String(cfg.laoudo_auth || '').trim()
-        return false
-      })
-      const resolvedMix = configuredProviders.length > 0 ? configuredProviders : MIX_PROVIDER_OPTIONS.filter((item) => DEFAULT_PARALLEL_MAIL_MIX.includes(item.value))
+      const resolvedMix = resolveConfiguredMixOptions(cfg)
       setMixProviderOptions(resolvedMix)
       const currentPlatform = form.getFieldValue('platform') || 'trae'
       form.setFieldsValue({
@@ -95,6 +75,20 @@ export default function RegisterTaskPage() {
         maliapi_domain: cfg.maliapi_domain || '',
         maliapi_auto_domain_strategy: cfg.maliapi_auto_domain_strategy || 'balanced',
         duckmail_api_url: cfg.duckmail_api_url || '',
+        duckduckgo_email: cfg.duckduckgo_email || '',
+        duckduckgo_gmail_address: cfg.duckduckgo_gmail_address || '',
+        duckduckgo_gmail_app_password: cfg.duckduckgo_gmail_app_password || '',
+        duckduckgo_imap_host: cfg.duckduckgo_imap_host || 'imap.gmail.com',
+        duckduckgo_imap_port: cfg.duckduckgo_imap_port || '993',
+        duckduckgo_mailbox: cfg.duckduckgo_mailbox || 'INBOX',
+        duckduckgo_all_mailbox: cfg.duckduckgo_all_mailbox || '[Gmail]/All Mail',
+        duckduckgo_gmail_api_mode: cfg.duckduckgo_gmail_api_mode || 'imap',
+        duckduckgo_gmail_api_credentials: cfg.duckduckgo_gmail_api_credentials || '',
+        duckduckgo_gmail_api_token: cfg.duckduckgo_gmail_api_token || '',
+        duckduckgo_api_token: cfg.duckduckgo_api_token || '',
+        duckduckgo_alias_mode: cfg.duckduckgo_alias_mode || 'fixed',
+        duckduckgo_private_addresses: cfg.duckduckgo_private_addresses || '',
+        duckduckgo_alias_rotation: cfg.duckduckgo_alias_rotation || 'random',
         duckmail_provider_url: cfg.duckmail_provider_url || '',
         duckmail_bearer: cfg.duckmail_bearer || '',
         freemail_api_url: cfg.freemail_api_url || '',
@@ -105,7 +99,7 @@ export default function RegisterTaskPage() {
         mail2925_password: cfg.mail2925_password || '',
         mail2925_alias_mode: cfg.mail2925_alias_mode || 'main',
         mail2925_domain: cfg.mail2925_domain || '2925.com',
-        mail_provider_mix: resolvedMix.map((item) => item.value),
+        mail_provider_mix: resolvedMix.map((item: { value: string }) => item.value),
         cfworker_api_url: cfg.cfworker_api_url || '',
         cfworker_admin_token: cfg.cfworker_admin_token || '',
         cfworker_custom_auth: cfg.cfworker_custom_auth || '',
@@ -150,104 +144,40 @@ export default function RegisterTaskPage() {
 
   const submit = async () => {
     const values = await form.validateFields()
-    const registerExtra = {
-      mail_provider: values.mail_provider,
-      mail_provider_mix: values.mail_provider_mix_enabled ? values.mail_provider_mix : [],
-      laoudo_auth: values.laoudo_auth,
-      laoudo_email: values.laoudo_email,
-      laoudo_account_id: values.laoudo_account_id,
-      gptmail_base_url: values.gptmail_base_url,
-      gptmail_api_key: values.gptmail_api_key,
-      gptmail_domain: values.gptmail_domain,
-      opentrashmail_api_url: values.opentrashmail_api_url,
-      opentrashmail_domain: values.opentrashmail_domain,
-      opentrashmail_password: values.opentrashmail_password,
-      maliapi_base_url: values.maliapi_base_url,
-      maliapi_api_key: values.maliapi_api_key,
-      maliapi_domain: values.maliapi_domain,
-      maliapi_auto_domain_strategy: values.maliapi_auto_domain_strategy,
-      moemail_api_url: values.moemail_api_url,
-      moemail_api_key: values.moemail_api_key,
-      skymail_api_base: values.skymail_api_base,
-      skymail_token: values.skymail_token,
-      skymail_domain: values.skymail_domain,
-      duckmail_api_url: values.duckmail_api_url,
-      duckmail_provider_url: values.duckmail_provider_url,
-      duckmail_bearer: values.duckmail_bearer,
-      freemail_api_url: values.freemail_api_url,
-      freemail_admin_token: values.freemail_admin_token,
-      freemail_username: values.freemail_username,
-      freemail_password: values.freemail_password,
-      mail2925_login_name: values.mail2925_login_name,
-      mail2925_password: values.mail2925_password,
-      mail2925_alias_mode: values.mail2925_alias_mode,
-      mail2925_domain: values.mail2925_domain,
-      cfworker_api_url: values.cfworker_api_url,
-      cfworker_admin_token: values.cfworker_admin_token,
-      cfworker_custom_auth: values.cfworker_custom_auth,
-      cfworker_domain_override: values.cfworker_domain_override,
-      cfworker_subdomain: values.cfworker_subdomain,
-      cfworker_random_subdomain: values.cfworker_random_subdomain,
-      cfworker_fingerprint: values.cfworker_fingerprint,
-      smsbower_api_key: values.smsbower_api_key,
-      sms_provider: values.sms_provider,
-      sim5_api_key: values.sim5_api_key,
-      herosms_api_key: values.herosms_api_key,
-      smsbower_country: values.smsbower_country,
-      smsbower_type: values.smsbower_type,
-      smsbower_max_price: values.smsbower_max_price,
-      smsbower_min_price: values.smsbower_min_price,
-      smsbower_price_steps: values.smsbower_price_steps,
-      smsbower_phone_attempts: values.smsbower_phone_attempts,
-      smsbower_add_phone_send_attempts: values.smsbower_add_phone_send_attempts,
-      smsbower_otp_timeout_seconds: values.smsbower_otp_timeout_seconds,
-      smsbower_code_attempts: values.smsbower_code_attempts,
-      fraud_guard_proxy_rotations: values.fraud_guard_proxy_rotations,
-      smsbower_provider_ids: values.smsbower_provider_ids,
-      smsbower_except_provider_ids: values.smsbower_except_provider_ids,
-      luckmail_base_url: values.luckmail_base_url,
-      luckmail_api_key: values.luckmail_api_key,
-      luckmail_email_type: values.luckmail_email_type,
-      luckmail_domain: values.luckmail_domain,
-      yescaptcha_key: values.yescaptcha_key,
-      solver_url: values.solver_url,
-      // 自动上传配置
-      cpa_api_url: values.cpa_api_url,
-      cpa_api_key: values.cpa_api_key,
-      sub2api_api_url: values.sub2api_api_url,
-      sub2api_api_key: values.sub2api_api_key,
-      sub2api_group_ids: values.sub2api_group_ids,
-      codex_proxy_url: values.codex_proxy_url,
-      codex_proxy_key: values.codex_proxy_key,
-      codex_proxy_upload_type: values.codex_proxy_upload_type,
-      team_manager_url: values.team_manager_url,
-      team_manager_key: values.team_manager_key,
-    }
-    const chatgptRegistrationRequestAdapter =
-      buildChatGPTRegistrationRequestAdapter(
-        values.platform,
-        chatgptRegistrationMode,
-      )
-    const adaptedRegisterExtra = chatgptRegistrationRequestAdapter
-      ? chatgptRegistrationRequestAdapter.extendExtra(registerExtra)
-      : registerExtra
+    setSubmitting(true)
+    try {
+      const registerExtra = buildRegisterExtra({}, values)
+      const chatgptRegistrationRequestAdapter =
+        buildChatGPTRegistrationRequestAdapter(
+          values.platform,
+          chatgptRegistrationMode,
+        )
+      const adaptedRegisterExtra = chatgptRegistrationRequestAdapter
+        ? chatgptRegistrationRequestAdapter.extendExtra(registerExtra)
+        : registerExtra
 
-    const res = await apiFetch('/tasks/register', {
-      method: 'POST',
-      body: JSON.stringify({
-        platform: values.platform,
-        email: values.email || null,
-        password: values.password || null,
-        count: values.count,
-        concurrency: values.concurrency,
-        register_delay_seconds: values.register_delay_seconds || 0,
-        proxy: values.proxy || null,
-        executor_type: values.executor_type,
-        captcha_solver: values.captcha_solver,
-        extra: adaptedRegisterExtra,
-      }),
-    })
-    startTask(res)
+      const res = await apiFetch('/tasks/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          platform: values.platform,
+          email: values.email || null,
+          password: values.password || null,
+          count: values.count,
+          concurrency: values.concurrency,
+          register_delay_seconds: values.register_delay_seconds || 0,
+          proxy: values.proxy || null,
+          executor_type: values.executor_type,
+          captcha_solver: values.captcha_solver,
+          extra: adaptedRegisterExtra,
+        }),
+      })
+      setSubmitting(false)
+      startTask(res)
+    } catch (err: any) {
+      setSubmitting(false)
+      const msg = err?.message || err?.detail || String(err)
+      message.error(msg || '创建任务失败，请检查网络连接')
+    }
   }
 
   const mailProvider = Form.useWatch('mail_provider', form)
@@ -279,7 +209,7 @@ export default function RegisterTaskPage() {
   }, [form, mailProviderMixEnabled, mixProviderOptions])
 
   return (
-    <div style={{ maxWidth: 800 }}>
+    <div className="page-container" style={{ maxWidth: 960 }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>注册任务</h1>
         <p style={{ color: '#7a8ba3', marginTop: 4 }}>创建账号自动注册任务</p>
@@ -372,6 +302,7 @@ export default function RegisterTaskPage() {
                 { value: 'opentrashmail', label: 'OpenTrashMail' },
                 { value: 'mail2925', label: '2925 Mail (Web)' },
                 { value: 'duckmail', label: 'DuckMail' },
+                { value: 'duckduckgo', label: 'DuckDuckGo' },
                 { value: 'freemail', label: 'Freemail' },
                 { value: 'laoudo', label: 'Laoudo' },
                 { value: 'cfworker', label: 'CF Worker' },
@@ -505,6 +436,68 @@ export default function RegisterTaskPage() {
               </Form.Item>
               <Form.Item name="mail2925_domain" label="Alias Domain">
                 <Input placeholder="2925.com" />
+              </Form.Item>
+            </>
+          )}
+          {selectedMailProviders.includes('duckduckgo') && (
+            <>
+              <Form.Item name="duckduckgo_email" label="Duck Address" rules={[{ required: true, message: 'Please enter Duck address' }]}>
+                <Input placeholder="name@duck.com" />
+              </Form.Item>
+              <Form.Item name="duckduckgo_gmail_address" label="Gmail Address" rules={[{ required: true, message: 'Please enter Gmail address' }]}>
+                <Input placeholder="name@gmail.com" />
+              </Form.Item>
+              <Form.Item name="duckduckgo_gmail_api_mode" label="Gmail Mode">
+                <Select
+                  options={[
+                    { value: 'imap', label: 'IMAP' },
+                    { value: 'gmail_api', label: 'Gmail API' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="duckduckgo_gmail_app_password" label="Gmail App Password">
+                <Input.Password placeholder="16-char app password" />
+              </Form.Item>
+              <Form.Item name="duckduckgo_imap_host" label="IMAP Host">
+                <Input placeholder="imap.gmail.com" />
+              </Form.Item>
+              <Form.Item name="duckduckgo_imap_port" label="IMAP Port">
+                <Input placeholder="993" />
+              </Form.Item>
+              <Form.Item name="duckduckgo_mailbox" label="Mailbox">
+                <Input placeholder="INBOX" />
+              </Form.Item>
+              <Form.Item name="duckduckgo_all_mailbox" label="All Mailbox">
+                <Input placeholder="[Gmail]/All Mail" />
+              </Form.Item>
+              <Form.Item name="duckduckgo_gmail_api_credentials" label="Gmail API Credentials JSON">
+                <Input.TextArea placeholder='{"installed": {...}}' autoSize={{ minRows: 4, maxRows: 8 }} />
+              </Form.Item>
+              <Form.Item name="duckduckgo_gmail_api_token" label="Gmail API Token JSON">
+                <Input.TextArea placeholder='{"refresh_token": "..."}' autoSize={{ minRows: 4, maxRows: 8 }} />
+              </Form.Item>
+              <Form.Item name="duckduckgo_api_token" label="Duck API Token">
+                <Input.Password placeholder="Duck Email Protection token" />
+              </Form.Item>
+              <Form.Item name="duckduckgo_alias_mode" label="Duck Address Mode">
+                <Select
+                  options={[
+                    { value: 'fixed', label: 'Fixed Duck Address' },
+                    { value: 'pool', label: 'Private Address Pool' },
+                    { value: 'auto_generate', label: 'Auto Generate Real Private Address' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="duckduckgo_alias_rotation" label="Duck Rotation">
+                <Select
+                  options={[
+                    { value: 'random', label: 'Random' },
+                    { value: 'round_robin', label: 'Round Robin' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="duckduckgo_private_addresses" label="Duck Private Addresses">
+                <Input.TextArea placeholder={'one@duck.com\ntwo@duck.com'} autoSize={{ minRows: 4, maxRows: 8 }} />
               </Form.Item>
             </>
           )}
@@ -697,15 +690,14 @@ export default function RegisterTaskPage() {
           </Card>
         )}
 
-        <Button type="primary" htmlType="submit" block disabled={polling} icon={polling ? <LoadingOutlined /> : <PlayCircleOutlined />}>
-          {polling ? '注册中...' : '开始注册'}
+        <Button type="primary" htmlType="submit" block disabled={submitting || (polling && !isTaskFinished(task))} icon={submitting || (polling && !isTaskFinished(task)) ? <LoadingOutlined /> : <PlayCircleOutlined />}>
+          {submitting ? '创建任务...' : polling && !isTaskFinished(task) ? '注册中...' : '开始注册'}
         </Button>
       </Form>
 
       {task && (() => {
         const taskKey = task.id || task.task_id || ''
-        const isFinished =
-          task.status === 'done' || task.status === 'failed' || task.status === 'stopped'
+        const isFinished = isTaskFinished(task)
         return (
           <Card
             title={
@@ -727,11 +719,9 @@ export default function RegisterTaskPage() {
               </Space>
             }
             extra={
-              isFinished ? (
-                <Button size="small" onClick={clearTask}>
-                  关闭面板
-                </Button>
-              ) : null
+              <Button size="small" onClick={clearTask}>
+                {isFinished ? '关闭面板' : '停止并关闭'}
+              </Button>
             }
             style={{ marginTop: 16 }}
           >

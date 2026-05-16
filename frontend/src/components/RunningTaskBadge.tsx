@@ -1,4 +1,4 @@
-import { Badge, Button, Progress, Space, Tag, Tooltip, Typography } from 'antd'
+import { Badge, Button, Space, Tag, Tooltip, Typography } from 'antd'
 import {
   CheckCircleFilled,
   CloseCircleFilled,
@@ -22,8 +22,6 @@ export default function RunningTaskBadge() {
   const completed = Number(task.completed ?? 0)
   const success = Number(task.success ?? 0)
   const errorsCount = Array.isArray(task.errors) ? task.errors.length : 0
-  const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0
-
   const status = task.status || (polling ? 'running' : 'done')
   const isFinished = status === 'done' || status === 'failed' || status === 'stopped'
   const isOnTaskPage = location.pathname === '/register-task'
@@ -50,85 +48,42 @@ export default function RunningTaskBadge() {
 
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: '8px 14px',
-        borderRadius: 12,
-        background: 'linear-gradient(135deg, rgba(99,102,241,.10), rgba(34,197,94,.08))',
-        border: '1px solid var(--rt-border, rgba(148,163,184,.18))',
-        boxShadow: '0 4px 14px rgba(15,23,42,.06)',
-        cursor: 'pointer',
-        userSelect: 'none',
-        minWidth: 320,
-      }}
+      className="running-task-pill"
       onClick={() => {
         if (!isOnTaskPage) navigate('/register-task')
       }}
     >
       <Badge dot={polling} status={statusColor as 'success' | 'error' | 'warning' | 'processing'}>
         {polling ? (
-          <LoadingOutlined style={{ fontSize: 18, color: '#6366f1' }} />
+          <LoadingOutlined className="running-task-pill__icon running-task-pill__icon--running" />
         ) : status === 'done' ? (
-          <CheckCircleFilled style={{ fontSize: 18, color: '#10b981' }} />
+          <CheckCircleFilled className="running-task-pill__icon running-task-pill__icon--success" />
         ) : (
-          <CloseCircleFilled style={{ fontSize: 18, color: '#ef4444' }} />
+          <CloseCircleFilled className="running-task-pill__icon running-task-pill__icon--error" />
         )}
       </Badge>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 12,
-            fontWeight: 600,
-            marginBottom: 4,
-          }}
-        >
-          <span>注册任务</span>
-          <Tag color={statusColor} style={{ margin: 0, fontSize: 11 }}>
-            {statusLabel}
-          </Tag>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            {completed}/{total || '?'}
-          </Text>
-          <Space size={6} style={{ marginLeft: 'auto' }}>
-            <Tooltip title="成功">
-              <span style={{ color: '#10b981', fontSize: 12, fontWeight: 600 }}>
-                ✓ {success}
-              </span>
-            </Tooltip>
-            {errorsCount > 0 && (
-              <Tooltip title="失败">
-                <span style={{ color: '#ef4444', fontSize: 12, fontWeight: 600 }}>
-                  ✕ {errorsCount}
-                </span>
-              </Tooltip>
-            )}
-          </Space>
-        </div>
-        <Progress
-          percent={percent}
-          showInfo={false}
-          size="small"
-          strokeColor={
-            status === 'failed'
-              ? '#ef4444'
-              : status === 'done'
-                ? '#10b981'
-                : { from: '#6366f1', to: '#22c55e' }
-          }
-          trailColor="rgba(148,163,184,.18)"
-          style={{ margin: 0 }}
-        />
+      <div className="running-task-pill__main">
+        <span className="running-task-pill__title">注册任务</span>
+        <Tag color={statusColor} className="running-task-pill__tag">
+          {statusLabel}
+        </Tag>
+        <Text type="secondary" className="running-task-pill__meta">
+          {completed}/{total || '?'}
+        </Text>
+        <Tooltip title="成功">
+          <span className="running-task-pill__success">成功 {success}</span>
+        </Tooltip>
+        {errorsCount > 0 && (
+          <Tooltip title="失败">
+            <span className="running-task-pill__error">失败 {errorsCount}</span>
+          </Tooltip>
+        )}
       </div>
 
-      <Space size={4}>
+      <Space size={2} className="running-task-pill__actions">
         {!isFinished && (
-          <Tooltip title="关闭任务栏">
+          <Tooltip title="关闭任务提示">
             <Button
               type="text"
               size="small"
@@ -152,7 +107,7 @@ export default function RunningTaskBadge() {
             清除
           </Button>
         ) : (
-          <RightOutlined style={{ color: 'rgba(148,163,184,.7)', fontSize: 12 }} />
+          <RightOutlined className="running-task-pill__arrow" />
         )}
       </Space>
     </div>

@@ -64,7 +64,7 @@ class TaskLogBatchDeleteRequest(BaseModel):
 
 
 def _log(task_id: str, msg: str):
-    """向任务追加一条日志"""
+    """Append a log entry to the task and print to console."""
     ts = time.strftime("%H:%M:%S")
     entry = f"[{ts}] {msg}"
     with _tasks_lock:
@@ -80,10 +80,8 @@ def _log(task_id: str, msg: str):
                 task["log_offset"] = int(task.get("log_offset", 0)) + drop_count
     try:
         print(entry)
-    except UnicodeEncodeError as exc:
-        encoding = exc.encoding or "utf-8"
-        safe_entry = entry.encode(encoding, errors="replace").decode(encoding, errors="replace")
-        print(safe_entry)
+    except UnicodeEncodeError:
+        print(entry.encode("utf-8", errors="replace").decode("utf-8", errors="replace"))
 
 
 def _save_task_log(platform: str, email: str, status: str,
@@ -267,355 +265,6 @@ def _auto_upload_integrations(task_id: str, account):
         _log(task_id, f"  [Auto Upload] 自动导入异常: {e}")
 
 
-def _resolve_payment_plus_flow_order(extra: dict, cfg: dict | None = None) -> str:
-    cfg = cfg or {}
-    raw = (
-        (extra or {}).get("payment_plus_flow_order")
-        or cfg.get("payment_plus_flow_order")
-        or "after_oauth"
-    )
-    normalized = str(raw or "").strip().lower().replace("-", "_")
-    if normalized in {"before_oauth", "pre_oauth", "plus_before_oauth"}:
-        return "before_oauth"
-    return "after_oauth"
-
-
-def _resolve_auto_pay_plan(extra: dict | None, cfg: dict | None = None) -> str:
-    raw = (
-        (extra or {}).get("auto_pay_plan")
-        or (extra or {}).get("payment_auto_plan")
-        or (cfg or {}).get("payment_auto_plan")
-        or ""
-    )
-    return str(raw or "").strip().lower()
-
-
-def _make_pre_oauth_auto_pay_hook(task_id: str, extra: dict):
-    def _hook(result, runtime: dict) -> dict:
-        from platforms.chatgpt.payment_auto import run_payment_from_config_store, PaymentError
-
-        plan = 'plus'
-        account_email = (getattr(result, 'email', '') or '').strip()
-        billing_country = str((extra or {}).get('payment_billing_country') or 'US').strip().upper()
-        billing_currency = str((extra or {}).get('payment_billing_currency') or 'USD').strip().upper()
-        proxy_geo_country = str(
-            runtime.get('proxy_geo_country')
-            or (extra or {}).get('proxy_geo_country')
-            or ''
-        ).strip().upper()
-        proxy_url = (
-            (extra or {}).get('proxy')
-            or (extra or {}).get('proxy_url')
-            or runtime.get('proxy_url')
-            or ''
-        ).strip()
-        idempotency_key = _build_payment_idempotency_key(
-            account_email=account_email,
-            plan=plan,
-            billing_country=billing_country,
-            billing_currency=billing_currency,
-        )
-        geo_diagnostics = _build_payment_geo_diagnostics(
-            billing_country=billing_country,
-            billing_currency=billing_currency,
-            proxy_url=proxy_url,
-            proxy_geo_country=proxy_geo_country,
-        )
-
-        _log(task_id, '  [AutoPay] pre-oauth payment hook')
-        access_token = (getattr(result, 'access_token', '') or '').strip()
-        session_token = (runtime.get('session_token') or getattr(result, 'session_token', '') or '').strip()
-        cookie_header = (runtime.get('cookie_header') or '').strip()
-        device_id = (runtime.get('device_id') or '').strip()
-        cookie_count = len([part for part in cookie_header.split(';') if part.strip()])
-        _log(
-            task_id,
-            '  [AutoPay] OAuth 前支付凭证检查'
-            f" access_token={'yes' if access_token else 'no'}"
-            f" session_token={'yes' if session_token else 'no'}"
-            f" cookie_header={'yes' if cookie_header else 'no'}"
-            f" cookie_count={cookie_count}"
-            f" device_id={'yes' if device_id else 'no'}",
-        )
-        if not (access_token or session_token):
-            message = 'missing ChatGPT access_token/session_token before OAuth'
-            _log(task_id, f'  [AutoPay] {message}')
-            return {
-                'plan': plan,
-                'state': 'skipped_pre_oauth_missing_auth',
-                'flow_order': 'before_oauth',
-                'error': message,
-                'idempotency_key': idempotency_key,
-                'geo_diagnostics': geo_diagnostics,
-            }
-
-        try:
-            payment_result = run_payment_from_config_store(
-                plan_name='chatgptplusplan',
-                access_token=access_token,
-                session_token=session_token,
-                cookie_header=cookie_header,
-                device_id=device_id,
-                proxy_url=proxy_url,
-                proxy_geo_country=proxy_geo_country,
-                config_overrides=extra,
-                log_fn=lambda msg: _log(task_id, f'  [AutoPay] {msg}'),
-            )
-        except PaymentError as pe:
-            _log(task_id, f'  [AutoPay] pre-oauth payment failed: {pe}')
-            return {
-                'plan': plan,
-                'state': 'failed_pre_oauth',
-                'flow_order': 'before_oauth',
-                'error': str(pe),
-                'idempotency_key': idempotency_key,
-                'geo_diagnostics': geo_diagnostics,
-            }
-
-        if payment_result.success:
-            receipt = payment_result.receipt_url[:80] if payment_result.receipt_url else ''
-            receipt_suffix = f' receipt={receipt}' if receipt else ''
-            _log(task_id, f'  [AutoPay] pre-oauth payment succeeded state={payment_result.state}{receipt_suffix}')
-        else:
-            _log(task_id, f'  [AutoPay] pre-oauth payment failed state={payment_result.state} error={payment_result.error}')
-
-        return {
-            'plan': plan,
-            'state': payment_result.state if payment_result.success else f'failed_pre_oauth:{payment_result.state}',
-            'receipt_url': payment_result.receipt_url,
-            'flow_order': 'before_oauth',
-            'error': payment_result.error,
-            'idempotency_key': idempotency_key,
-            'geo_diagnostics': geo_diagnostics,
-        }
-
-    return _hook
-
-def _auto_pay_after_register(task_id: str, account, extra: dict):
-    try:
-        platform = getattr(account, 'platform', '') or ''
-        if platform != 'chatgpt':
-            return
-
-        from core.config_store import config_store
-        cfg = config_store.get_all()
-
-        plan = _resolve_auto_pay_plan(extra, cfg)
-        if plan not in ('plus', 'team'):
-            return
-
-        account_extra = _load_account_extra(account)
-        billing_country = str((extra.get('payment_billing_country') or cfg.get('payment_billing_country') or 'US')).strip().upper()
-        billing_currency = str((extra.get('payment_billing_currency') or cfg.get('payment_billing_currency') or 'USD')).strip().upper()
-        proxy_geo_country = str(
-            account_extra.get('proxy_geo_country')
-            or extra.get('proxy_geo_country')
-            or ''
-        ).strip().upper()
-        proxy_url = str((extra.get('proxy') or extra.get('proxy_url') or '')).strip()
-        idempotency_key = _build_payment_idempotency_key(
-            account_email=getattr(account, 'email', ''),
-            plan=plan,
-            billing_country=billing_country,
-            billing_currency=billing_currency,
-        )
-        geo_diagnostics = _build_payment_geo_diagnostics(
-            billing_country=billing_country,
-            billing_currency=billing_currency,
-            proxy_url=proxy_url,
-            proxy_geo_country=proxy_geo_country,
-        )
-
-        existing_state = str(account_extra.get('auto_pay_state') or '').strip()
-        existing_key = str(account_extra.get('auto_pay_idempotency_key') or '').strip()
-        existing_flow_order = str(account_extra.get('auto_pay_flow_order') or '').strip()
-        if (
-            existing_state == 'succeeded'
-            and (
-                existing_flow_order == 'before_oauth'
-                or not existing_key
-                or existing_key == idempotency_key
-            )
-        ):
-            _persist_account_extra(task_id, account, {}, status='subscribed')
-            _log(task_id, f'  [AutoPay] duplicate succeeded payment skipped key={idempotency_key}')
-            return
-
-        plan_name = 'chatgptplusplan' if plan == 'plus' else 'chatgptteamplan'
-        _log(task_id, f'  [AutoPay] start payment plan={plan}')
-
-        access_token = (account_extra.get('access_token') or '').strip()
-        session_token = (account_extra.get('session_token') or account_extra.get('refresh_token') or '').strip()
-        cookie_header = (account_extra.get('cookie_header') or '').strip()
-        device_id = (account_extra.get('oai_device_id') or account_extra.get('device_id') or '').strip()
-
-        if not access_token:
-            _log(task_id, '  [AutoPay] skip: missing access_token')
-            return
-
-        from platforms.chatgpt.payment_auto import run_payment_from_config_store, PaymentError
-
-        # 代理池：逗号分隔，支持地区标签 geo:url（如 jp:http://..., eu:http://...）
-        proxy_pool_raw = str(extra.get('payment_proxy_pool') or cfg.get('payment_proxy_pool') or '').strip()
-        proxy_pool = []
-        if proxy_pool_raw:
-            for _entry in proxy_pool_raw.split(','):
-                _entry = _entry.strip()
-                if not _entry:
-                    continue
-                # 剥离 geo 标签，只保留 URL 用于轮换
-                if ':' in _entry and not _entry.startswith('http'):
-                    _url = _entry.split(':', 1)[1].strip()
-                else:
-                    _url = _entry
-                if _url:
-                    proxy_pool.append(_url)
-        max_retries = 2
-        try:
-            max_retries = int(extra.get('payment_max_retries') or cfg.get('payment_max_retries') or 2)
-        except Exception:
-            pass
-
-        # 按 provider 分组的重试策略：diagnostic_code → (should_retry, retry_delay_s, rotate_proxy)
-        from platforms.chatgpt.payment_auto import resolve_provider
-        _resolved_provider, _ = resolve_provider({**cfg, **extra})
-        _log(task_id, f'  [AutoPay] resolved provider={_resolved_provider}')
-
-        # manual_link: 永不重试
-        if _resolved_provider == 'manual_link':
-            max_retries = 1
-
-        _RETRY_STRATEGIES_PAYPAL_WEB = {
-            'datadome_slider': (True, 3, True),
-            'datadome_ip_blocked': (True, 3, True),
-            'datadome_slider_failed': (True, 3, True),
-            'hcaptcha_timeout': (True, 10, False),
-            'hcaptcha_failed': (True, 10, False),
-            'hcaptcha_paypal_failed': (True, 10, False),
-            'paypal_callback_timeout': (True, 5, False),
-            'paypal_browser_auth': (True, 5, True),
-            'skipped_not_free': (True, 5, True),   # promo 未生效时可换 IP 重试
-        }
-        _RETRY_STRATEGIES_GOPAY_API = {
-            'gopay_otp_timeout': (True, 5, False),
-            'gopay_pin_failed': (True, 3, False),
-            'gopay_linking_failed': (True, 5, False),
-        }
-        _RETRY_STRATEGIES_GOPAY_ANDROID = {
-            'emulator_boot_timeout': (True, 10, False),
-            'network_down': (True, 5, False),
-            'app_launch_failed': (True, 5, False),
-            'otp_input_timeout': (True, 10, False),
-            'otp_sms_read_failed': (True, 10, False),
-            'otp_verify_failed': (True, 5, False),
-            'login_ui_not_found': (True, 5, False),
-            'pin_verify_failed': (True, 3, False),
-            'payment_confirm_timeout': (True, 5, False),
-            # 配置缺失不可重试，由前端/用户补配置
-            # 'no_phone_number', 'no_otp_provider', 'no_gopay_pin' → not in table = no retry
-        }
-        _RETRY_BY_PROVIDER = {
-            'paypal_web': _RETRY_STRATEGIES_PAYPAL_WEB,
-            'gopay_api': _RETRY_STRATEGIES_GOPAY_API,
-            'gopay_android': _RETRY_STRATEGIES_GOPAY_ANDROID,
-            'card': _RETRY_STRATEGIES_PAYPAL_WEB,  # card 共用 checkout 侧策略
-        }
-        _RETRY_STRATEGIES = _RETRY_BY_PROVIDER.get(_resolved_provider, {})
-
-        result = None
-        current_proxy = proxy_url
-        proxy_idx = 0
-        for attempt in range(1, max_retries + 1):
-            try:
-                result = run_payment_from_config_store(
-                    plan_name=plan_name,
-                    access_token=access_token,
-                    session_token=session_token,
-                    cookie_header=cookie_header,
-                    device_id=device_id,
-                    proxy_url=current_proxy,
-                    proxy_geo_country=proxy_geo_country,
-                    config_overrides=extra,
-                    log_fn=lambda msg: _log(task_id, f'  [AutoPay] {msg}'),
-                )
-            except PaymentError as pe:
-                _log(task_id, f'  [AutoPay] payment exception (attempt {attempt}/{max_retries}): {pe}')
-                result = None
-                break
-
-            if result and result.success:
-                break
-
-            # 检查是否应该重试
-            diag = getattr(result, 'diagnostic_code', '') if result else ''
-            retryable = getattr(result, 'retryable', False) if result else False
-            strategy = _RETRY_STRATEGIES.get(diag)
-
-            if attempt < max_retries and (retryable or strategy):
-                should_retry, delay, rotate = strategy if strategy else (retryable, 5, False)
-                if should_retry:
-                    _log(task_id, f'  [AutoPay] retrying ({attempt}/{max_retries}) diag={diag} delay={delay}s rotate_proxy={rotate}')
-                    if rotate and proxy_pool:
-                        proxy_idx = (proxy_idx + 1) % len(proxy_pool)
-                        current_proxy = proxy_pool[proxy_idx]
-                        _log(task_id, f'  [AutoPay] switched proxy to: {current_proxy[:40]}...')
-                    import time as _time
-                    _time.sleep(delay)
-                    continue
-            break
-
-        if result is None:
-            return
-
-        # 持久化结果（含诊断信息）
-        def _safe_result_text(name: str, default: str = '') -> str:
-            value = getattr(result, name, default)
-            if value is None:
-                return default
-            if isinstance(value, (str, int, float, bool)):
-                return str(value)
-            return default
-
-        diag_code = _safe_result_text('diagnostic_code')
-        stage = _safe_result_text('stage')
-        provider = _safe_result_text('provider', _resolved_provider) or _resolved_provider
-        state = _safe_result_text('state')
-        receipt_url = _safe_result_text('receipt_url')
-        error_text = _safe_result_text('error')
-
-        if result.success:
-            update = {
-                'auto_pay_plan': plan,
-                'auto_pay_state': state,
-                'auto_pay_receipt': receipt_url,
-                'auto_pay_flow_order': extra.get('auto_pay_flow_order') or _resolve_payment_plus_flow_order(extra, cfg),
-                'auto_pay_idempotency_key': idempotency_key,
-                'auto_pay_geo_diagnostics': geo_diagnostics,
-                'auto_pay_provider': provider,
-            }
-            _persist_account_extra(
-                task_id,
-                account,
-                update,
-                status='subscribed' if state == 'succeeded' else None,
-            )
-        else:
-            fail_update = {
-                'auto_pay_plan': plan,
-                'auto_pay_state': f'failed:{state}',
-                'auto_pay_diagnostic_code': diag_code,
-                'auto_pay_stage': stage,
-                'auto_pay_provider': provider,
-                'auto_pay_error': error_text[:200],
-                'auto_pay_flow_order': extra.get('auto_pay_flow_order') or _resolve_payment_plus_flow_order(extra, cfg),
-                'auto_pay_idempotency_key': idempotency_key,
-                'auto_pay_geo_diagnostics': geo_diagnostics,
-            }
-            _persist_account_extra(task_id, account, fail_update)
-            _log(task_id, f'  [AutoPay] payment failed state={state} diag={diag_code} stage={stage} error={error_text}')
-    except Exception as e:
-        _log(task_id, f'  [AutoPay] exception: {e}')
-
 def _run_register(task_id: str, req: RegisterTaskRequest):
     from core.registry import get
     from core.base_platform import RegisterConfig
@@ -627,18 +276,6 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
     success = 0
     skipped = 0
     errors = []
-
-    try:
-        _preflight_auto_pay_config(req)
-    except HTTPException as exc:
-        msg = str(exc.detail)
-        _log(task_id, msg)
-        with _tasks_lock:
-            _tasks[task_id]["status"] = "failed"
-            _tasks[task_id]["success"] = 0
-            _tasks[task_id]["skipped"] = 0
-            _tasks[task_id]["errors"] = [msg]
-        return
 
     # === 并发控制参数 ===
     max_workers = min(req.concurrency, req.count)
@@ -660,11 +297,11 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                 stop_event.set()
                 return False
             if not logged_pause:
-                _log(task_id, "任务已暂停，等待恢复...")
+                _log(task_id, "Task paused, waiting for resume...")
                 logged_pause = True
             time.sleep(0.25)
         if logged_pause:
-            _log(task_id, "任务已恢复，继续执行")
+            _log(task_id, "Task resumed, continuing")
         return True
 
     class _TaskControlBridge:
@@ -739,7 +376,7 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
             # 错峰启动：分段 sleep 以响应 stop 信号
             if i > 0 and stagger_seconds > 0:
                 delay = i * stagger_seconds
-                _log(task_id, f"Worker-{i} 错峰启动，等待 {delay:.1f}s")
+                _log(task_id, f"Worker-{i} staggered start, waiting {delay:.1f}s")
                 slept = 0.0
                 while slept < delay:
                     if stop_event.is_set() or _task_store.should_stop(task_id):
@@ -769,27 +406,6 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
 
                 merged_extra = config_store.get_all().copy()
                 merged_extra.update({k: v for k, v in req.extra.items() if v is not None})
-                auto_pay_plan = str(
-                    merged_extra.get("auto_pay_plan")
-                    or merged_extra.get("payment_auto_plan")
-                    or ""
-                ).strip().lower()
-                if (
-                    req.platform == "chatgpt"
-                    and auto_pay_plan == "plus"
-                    and _resolve_payment_plus_flow_order(merged_extra, merged_extra) == "before_oauth"
-                ):
-                    merged_extra = dict(merged_extra)
-                    hook_extra = dict(merged_extra)
-                    if _proxy:
-                        hook_extra.setdefault("proxy", _proxy)
-                        hook_extra.setdefault("proxy_url", _proxy)
-                    merged_extra["_chatgpt_pre_oauth_auto_pay_hook"] = _make_pre_oauth_auto_pay_hook(
-                        task_id,
-                        hook_extra,
-                    )
-                    _log(task_id, "  [AutoPay] 已启用 Plus OAuth 前升级模式")
-
                 _config = RegisterConfig(
                     executor_type=req.executor_type,
                     captcha_solver=req.captcha_solver,
@@ -818,9 +434,9 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                     proxy=str(_proxy or ""),
                     message="registering",
                 )
-                _log(task_id, f"开始注册第 {i+1}/{req.count} 个账号")
+                _log(task_id, f"Registering account {i+1}/{req.count}")
                 if _proxy:
-                    _log(task_id, f"使用代理: {_proxy}")
+                    _log(task_id, f"Using proxy: {_proxy}")
                 account = _platform.register(
                     email=req.email or None,
                     password=req.password,
@@ -858,16 +474,9 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                         smart_selector.report_proxy_result(_proxy, success=True)
                     else:
                         proxy_pool.report_success(_proxy)
-                _log(task_id, f"[OK] 注册成功: {account.email}")
+                _log(task_id, f"[OK] Registered: {account.email}")
                 _save_task_log(req.platform, account.email, "success")
                 
-                # 1. 先执行自动支付升级（仅 Plus/Team 配置生效；Free 会立即返回）
-                auto_pay_extra = dict(merged_extra)
-                if _proxy:
-                    auto_pay_extra.setdefault("proxy", _proxy)
-                    auto_pay_extra.setdefault("proxy_url", _proxy)
-                _auto_pay_after_register(task_id, saved_account or account, auto_pay_extra)
-
                 cashier_url = (account.extra or {}).get("cashier_url", "")
                 if cashier_url:
                     _log(task_id, f"  [升级链接] {cashier_url}")
@@ -914,7 +523,7 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                             proxy_pool.report_fail(_proxy)
                     except Exception:
                         pass
-                _log(task_id, f"[FAIL] 注册失败: {e}")
+                _log(task_id, f"[FAIL] Registration failed: {e}")
                 _set_worker_state(
                     task_id,
                     i + 1,
@@ -980,7 +589,7 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                             # 确保最小调用间隔
                             now = time.time()
                             elapsed = now - last_email_call[0]
-                            _log(task_id, f"正在创建第 {i+1}/{req.count} 个邮箱...")
+                            _log(task_id, f"Creating mailbox {i+1}/{req.count}...")
                             if elapsed < email_min_interval:
                                 time.sleep(email_min_interval - elapsed)
                             mailbox = _build_mailbox(req.proxy or None, i, attempt)
@@ -994,22 +603,22 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                                 provider=str(provider_name or ""),
                                 message="mailbox ready",
                             )
-                            _log(task_id, f"第 {i+1}/{req.count} 个邮箱创建成功 provider={provider_name}")
+                            _log(task_id, f"Mailbox {i+1}/{req.count} created, provider={provider_name}")
                             break
                     except Exception as e:
                         error_str = str(e)
                         if attempt < email_retries - 1:
                             backoff = (2 ** attempt) * max(email_min_interval, 2.0)
                             if "rate" in error_str.lower() or "频率" in error_str:
-                                _log(task_id, f"邮箱创建触发频率限制，{backoff:.0f}s 后重试 ({attempt + 1}/{email_retries})")
+                                _log(task_id, f"Mailbox creation rate limited, retry in {backoff:.0f}s ({attempt + 1}/{email_retries})")
                             else:
-                                _log(task_id, f"邮箱创建失败，{backoff:.0f}s 后重试 ({attempt + 1}/{email_retries}): {e}")
+                                _log(task_id, f"Mailbox creation failed, retry in {backoff:.0f}s ({attempt + 1}/{email_retries}): {e}")
                             time.sleep(backoff)
                         else:
-                            _log(task_id, f"[FAIL] 邮箱创建重试耗尽 ({email_retries}次): {e}")
+                            _log(task_id, f"[FAIL] Mailbox creation exhausted ({email_retries} attempts): {e}")
 
                 if mailbox is None:
-                    errors.append(f"第{i + 1}个账号邮箱创建失败")
+                    errors.append(f"Account #{i + 1} mailbox creation failed")
                     result_queue.put(("__error__", i, "邮箱创建失败"))
                     submitted_count += 1
                     inflight_registration_slots.release()
@@ -1092,7 +701,7 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                     _tasks[task_id]["errors"] = list(errors)
 
     except Exception as e:
-        _log(task_id, f"致命错误: {e}")
+        _log(task_id, f"Fatal error: {e}")
         with _tasks_lock:
             _tasks[task_id]["status"] = "failed"
             _tasks[task_id]["error"] = str(e)
@@ -1105,9 +714,9 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
         _tasks[task_id]["skipped"] = skipped
         _tasks[task_id]["errors"] = errors
     if final_status == "stopped":
-        _log(task_id, f"任务已停止: 成功 {success} 个, 跳过 {skipped} 个, 失败 {len(errors)} 个")
+        _log(task_id, f"Task stopped: {success} succeeded, {skipped} skipped, {len(errors)} failed")
     else:
-        _log(task_id, f"完成: 成功 {success} 个, 失败 {len(errors)} 个")
+        _log(task_id, f"Done: {success} succeeded, {len(errors)} failed")
     _task_store.clear(task_id)
     _cleanup_old_tasks()
 
@@ -1241,33 +850,11 @@ def _persist_account_extra(task_id: str, account, update: dict, *, status: str |
         _log(task_id, f"  [AutoPay] 写入 DB 失败（不影响支付结果）: {db_err}")
 
 
-def _preflight_auto_pay_config(req: RegisterTaskRequest) -> None:
-    if req.platform != "chatgpt":
-        return
-
-    from core.config_store import config_store
-    cfg = config_store.get_all()
-    merged_cfg = cfg.copy()
-    merged_cfg.update({k: v for k, v in (req.extra or {}).items() if v is not None and v != ""})
-
-    plan = _resolve_auto_pay_plan(req.extra, cfg)
-    if plan not in ("plus", "team"):
-        return
-
-    try:
-        from platforms.chatgpt.payment_auto import validate_payment_config
-        validate_payment_config(merged_cfg)
-    except Exception as exc:
-        raise HTTPException(400, f"AutoPay config invalid: {exc}") from exc
-
-
 @router.post("/register")
 def create_register_task(
     req: RegisterTaskRequest,
     background_tasks: BackgroundTasks,
 ):
-    _preflight_auto_pay_config(req)
-
     mail_provider = req.extra.get("mail_provider")
     if mail_provider == "luckmail":
         platform = req.platform
@@ -1295,7 +882,7 @@ def stop_task(task_id: str):
         if task_id not in _tasks:
             raise HTTPException(404, "任务不存在")
     control = _task_store.request_stop(task_id)
-    _log(task_id, "已收到停止任务请求")
+    _log(task_id, "Stop request received")
     return {"ok": True, "control": control.get("control", {})}
 
 
@@ -1305,7 +892,7 @@ def pause_task(task_id: str):
         if task_id not in _tasks:
             raise HTTPException(404, "任务不存在")
     control = _task_store.request_pause(task_id)
-    _log(task_id, "已收到暂停任务请求")
+    _log(task_id, "Pause request received")
     return {"ok": True, "control": control.get("control", {})}
 
 
@@ -1315,7 +902,7 @@ def resume_task(task_id: str):
         if task_id not in _tasks:
             raise HTTPException(404, "任务不存在")
     control = _task_store.request_resume(task_id)
-    _log(task_id, "已收到恢复任务请求")
+    _log(task_id, "Resume request received")
     return {"ok": True, "control": control.get("control", {})}
 
 
@@ -1325,7 +912,7 @@ def skip_current_task(task_id: str):
         if task_id not in _tasks:
             raise HTTPException(404, "任务不存在")
     control = _task_store.request_skip_current(task_id)
-    _log(task_id, "已收到跳过当前账号请求")
+    _log(task_id, "Skip current account request received")
     return {"ok": True, "control": control.get("control", {})}
 
 
@@ -1627,17 +1214,17 @@ def create_scheduled_task(body: RegisterTaskRequest):
             success = task_state.get("status") == "done" and not task_state.get("errors")
             if not success:
                 error_msg = task_state.get("error") or "; ".join(task_state.get("errors") or [])
-            print(f"[Scheduler] 任务 {task_id} 已执行", flush=True)
+            print(f"[Scheduler] task {task_id} executed", flush=True)
         except Exception as e:
             error_msg = str(e)
-            print(f"[Scheduler] 任务 {task_id} 执行失败：{e}", flush=True)
+            print(f"[Scheduler] task {task_id} failed: {e}", flush=True)
         finally:
             # 更新任务运行状态
             from core.scheduler import update_task_run_status
             update_task_run_status(task_id, success, error_msg)
     
     threading.Thread(target=run_now, daemon=True).start()
-    print(f"[Scheduler] 任务 {task_id} 已创建并启动", flush=True)
+    print(f"[Scheduler] task {task_id} created and started", flush=True)
     
     return {"task_id": task_id, "status": "scheduled", "config": config}
 

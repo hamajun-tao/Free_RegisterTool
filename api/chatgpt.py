@@ -100,9 +100,10 @@ def generate_payment_link(account_id: int, req: PaymentReq,
     acc = _get_account(account_id, session)
     codex_acc = _to_codex_account(acc)
 
-    from platforms.chatgpt.payment import generate_plus_link, generate_team_link
+    from platforms.chatgpt.payment import generate_plus_link_via_mooizz, generate_team_link
     if req.plan == "plus":
-        url = generate_plus_link(codex_acc, proxy=req.proxy, country=req.country)
+        mooizz_result = generate_plus_link_via_mooizz(codex_acc, proxy=req.proxy, country=req.country)
+        url = str(mooizz_result.get("url") or "").strip()
     else:
         url = generate_team_link(
             codex_acc, workspace_name=req.workspace_name,

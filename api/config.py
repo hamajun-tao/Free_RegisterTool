@@ -18,6 +18,20 @@ CONFIG_KEYS = [
     "duckmail_bearer",
     "duckmail_domain",
     "duckmail_api_key",
+    "duckduckgo_email",
+    "duckduckgo_gmail_address",
+    "duckduckgo_gmail_app_password",
+    "duckduckgo_imap_host",
+    "duckduckgo_imap_port",
+    "duckduckgo_mailbox",
+    "duckduckgo_all_mailbox",
+    "duckduckgo_gmail_api_mode",
+    "duckduckgo_gmail_api_credentials",
+    "duckduckgo_gmail_api_token",
+    "duckduckgo_api_token",
+    "duckduckgo_alias_mode",
+    "duckduckgo_private_addresses",
+    "duckduckgo_alias_rotation",
     "freemail_api_url",
     "freemail_admin_token",
     "freemail_username",
@@ -101,62 +115,6 @@ CONFIG_KEYS = [
     "grok2api_quota",
     "kiro_manager_path",
     "kiro_manager_exe",
-    "payment_auto_plan",
-    "payment_plus_flow_order",
-    "payment_provider",
-    "payment_method",
-    "payment_proxy_pool",
-    "payment_max_retries",
-    "payment_paypal_proxy_url",
-    "payment_promo_proxy_url",
-    "payment_promo_proxy_geo",
-    "payment_card_number",
-    "payment_card_cvc",
-    "payment_card_exp_month",
-    "payment_card_exp_year",
-    "payment_billing_name",
-    "payment_billing_country",
-    "payment_billing_currency",
-    "payment_billing_address",
-    "payment_billing_city",
-    "payment_billing_state",
-    "payment_billing_zip",
-    "payment_team_workspace_name",
-    "payment_team_seat_quantity",
-    "payment_captcha_api_url",
-    "payment_captcha_key",
-    "payment_vlm_base_url",
-    "payment_vlm_api_key",
-    "payment_vlm_model",
-    "payment_vlm_timeout_s",
-    "payment_paypal_email",
-    "payment_paypal_password",
-    "payment_gopay_phone",
-    "payment_gopay_pin",
-    "payment_gopay_otp_file",
-    "payment_gopay_otp_url",
-    "payment_gopay_otp_retries",
-    "payment_gopay_sms_country",
-    "payment_gopay_sms_service",
-    "payment_gojek_app_version",
-    "payment_android_avd_name",
-    "payment_android_serial",
-    "payment_android_headless",
-    "payment_android_gojek_apk",
-    "payment_android_gopay_apk",
-    "payment_android_adb_path",
-    "payment_android_emulator_path",
-    "payment_card_py_path",
-    "payment_python_executable",
-    "payment_skip_if_not_free",
-    "payment_gopay_auto_register",
-    "payment_auto_cancel_after_subscribe",
-    "payment_phone_failure_keep_as_free",
-    "payment_captcha_validate_online",
-    "payment_is_coupon_from_query_param",
-    "payment_checkout_ui_mode",
-    "wa_relay_src_dir",
-    "wa_relay_proxy_url",
 ]
 
 
@@ -172,6 +130,20 @@ def get_config():
         all_cfg["mail_provider"] = "luckmail"
     if not all_cfg.get("gptmail_base_url"):
         all_cfg["gptmail_base_url"] = "https://mail.chatgpt.org.uk"
+    if not all_cfg.get("duckduckgo_imap_host"):
+        all_cfg["duckduckgo_imap_host"] = "imap.gmail.com"
+    if not all_cfg.get("duckduckgo_imap_port"):
+        all_cfg["duckduckgo_imap_port"] = "993"
+    if not all_cfg.get("duckduckgo_mailbox"):
+        all_cfg["duckduckgo_mailbox"] = "INBOX"
+    if not all_cfg.get("duckduckgo_all_mailbox"):
+        all_cfg["duckduckgo_all_mailbox"] = "[Gmail]/All Mail"
+    if not all_cfg.get("duckduckgo_gmail_api_mode"):
+        all_cfg["duckduckgo_gmail_api_mode"] = "imap"
+    if not all_cfg.get("duckduckgo_alias_mode"):
+        all_cfg["duckduckgo_alias_mode"] = "fixed"
+    if not all_cfg.get("duckduckgo_alias_rotation"):
+        all_cfg["duckduckgo_alias_rotation"] = "random"
     if not all_cfg.get("luckmail_base_url"):
         all_cfg["luckmail_base_url"] = "https://mails.luckyous.com/"
     if not all_cfg.get("mail2925_domain"):
@@ -179,7 +151,7 @@ def get_config():
     if not all_cfg.get("mail2925_alias_mode"):
         all_cfg["mail2925_alias_mode"] = "main"
     if not all_cfg.get("smsbower_country"):
-        all_cfg["smsbower_country"] = "78,10,6,22,73,16,187,52,12"
+        all_cfg["smsbower_country"] = "10,6,22,73,187,52,12,78"
     if not all_cfg.get("sms_provider"):
         all_cfg["sms_provider"] = "smsbower"
     if not all_cfg.get("smsbower_phone_attempts"):

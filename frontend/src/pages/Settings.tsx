@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { App, Alert, Card, Form, Input, Select, Button, message, Tabs, Space, Tag, Typography, Modal, QRCode, Switch } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { App, Alert, Card, Form, Input, Select, Button, message, Segmented, Tabs, Space, Tag, Typography, Modal, QRCode, Switch, Collapse } from 'antd'
 import {
   SaveOutlined,
   EyeOutlined,
@@ -15,14 +15,22 @@ import {
 } from '@ant-design/icons'
 import { parseBooleanConfigValue } from '@/lib/configValueParsers'
 import { apiFetch } from '@/lib/utils'
+import { PageHeader } from '@/components/ui'
 
 const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
+  chatgpt_phone_source: [
+    { label: 'SMSBOWER', value: 'smsbower' },
+    { label: '5SIM', value: '5sim' },
+    { label: 'HeroSMS', value: 'herosms' },
+    { label: 'SMSToMe', value: 'smstome' },
+  ],
   mail_provider: [
     { label: 'LuckMail（订单接码 / 已购邮箱）', value: 'luckmail' },
     { label: 'Laoudo（固定邮箱）', value: 'laoudo' },
     { label: 'TempMail.lol（自动生成）', value: 'tempmail_lol' },
     { label: 'SkyMail（CloudMail 接口）', value: 'skymail' },
     { label: 'DuckMail（自动生成）', value: 'duckmail' },
+    { label: 'DuckDuckGo Email Protection', value: 'duckduckgo' },
     { label: 'MoeMail (sall.cc)', value: 'moemail' },
     { label: 'YYDS Mail / MaliAPI', value: 'maliapi' },
     { label: 'GPTMail', value: 'gptmail' },
@@ -64,76 +72,138 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: '5SIM', value: '5sim' },
     { label: 'HeroSMS', value: 'herosms' },
   ],
-  payment_auto_plan: [
-    { label: '关闭（不自动升级）', value: '' },
-    { label: '注册后自动升级 Plus（$20/月）', value: 'plus' },
-    { label: '注册后自动升级 Team（需填 Workspace）', value: 'team' },
-  ],
-  payment_plus_flow_order: [
-    { label: '默认：OAuth/Token 后再升级（当前稳定模式）', value: 'after_oauth' },
-    { label: 'Plus：基础账号创建后先升级，再 OAuth/上传', value: 'before_oauth' },
-  ],
-  payment_method: [
-    { label: '信用卡 (Card)', value: 'card' },
-    { label: 'GoPay (印尼电子钱包)', value: 'gopay' },
-    { label: 'PayPal', value: 'paypal' },
-  ],
-  payment_provider: [
-    { label: 'Auto by payment method', value: '' },
-    { label: 'PayPal Web', value: 'paypal_web' },
-    { label: 'GoPay API', value: 'gopay_api' },
-    { label: 'GoPay Android Emulator', value: 'gopay_android' },
-    { label: 'Card', value: 'card' },
-    { label: 'Manual payment link only', value: 'manual_link' },
-  ],
-  payment_promo_proxy_geo: [
-    { label: 'JP - Japan promo', value: 'JP' },
-    { label: 'US - United States', value: 'US' },
-    { label: 'IE - Ireland', value: 'IE' },
-    { label: 'DE - Germany', value: 'DE' },
-    { label: 'GB - United Kingdom', value: 'GB' },
-    { label: 'SG - Singapore', value: 'SG' },
-  ],
-  payment_android_headless: [
-    { label: 'Headless emulator', value: '1' },
-    { label: 'Visible emulator window', value: '0' },
-  ],
-  payment_billing_country: [
-    { label: 'US （美国）', value: 'US' },
-    { label: 'GB （英国）', value: 'GB' },
-    { label: 'DE （德国）', value: 'DE' },
-    { label: 'JP （日本）', value: 'JP' },
-    { label: 'SG （新加坡）', value: 'SG' },
-    { label: 'HK （香港）', value: 'HK' },
-    { label: 'AU （澳大利亚）', value: 'AU' },
-    { label: 'CA （加拿大）', value: 'CA' },
-    { label: 'IE （爱尔兰，PayPal 推荐）', value: 'IE' },
-    { label: 'ID （印度尼西亚，GoPay 必选）', value: 'ID' },
-  ],
-  payment_skip_if_not_free: [
-    { label: '关闭（即使非免费也付费开通）', value: '0' },
-    { label: '开启 ⭐推荐（promo 未生效则保留 Free 不扣款）', value: '1' },
-  ],
-  payment_auto_cancel_after_subscribe: [
-    { label: '关闭（订阅后不自动取消，下月会续费）', value: '0' },
-    { label: '开启 ⭐推荐（开通后立即取消，保留 Plus 1 月不续费）', value: '1' },
-  ],
-  payment_gopay_auto_register: [
-    { label: '关闭（使用手动配置的 phone+pin）', value: '0' },
-    { label: '开启 ⭐ 无限循环开 Plus（每轮自动 SMSBOWER 印尼号 + Gojek 注册 + 设置 PIN）', value: '1' },
-  ],
-  payment_captcha_validate_online: [
-    { label: '关闭（保存配置时不联网校验打码 key）', value: '0' },
-    { label: '开启（自动支付前在线校验打码 key）', value: '1' },
-  ],
-  payment_is_coupon_from_query_param: [
-    { label: '关闭（推荐，promo eligible 更稳定）', value: '0' },
-    { label: '开启（按 query 参数来源提交 coupon）', value: '1' },
-  ],
-  payment_checkout_ui_mode: [
-    { label: 'custom（嵌入式 Checkout，默认）', value: 'custom' },
-    { label: 'hosted（Stripe 托管页）', value: 'hosted' },
-  ],
+}
+
+const TAB_LABEL_OVERRIDES: Record<string, string> = {
+  register: '注册设置',
+  mailbox: '邮箱服务',
+  captcha: '验证码',
+  chatgpt: 'ChatGPT',
+  cliproxyapi: 'CLIProxyAPI',
+  grok: 'Grok',
+  kiro: 'Kiro',
+  integrations: '插件',
+  security: '安全',
+  claude: 'Claude 导入',
+}
+
+const SECTION_UI_OVERRIDES: Record<string, { title?: string; desc?: string }> = {
+  default_executor: { title: '默认注册方式', desc: '控制注册任务如何执行' },
+  mail_provider: { title: '默认邮箱服务', desc: '选择注册时使用的邮箱服务' },
+  laoudo: { title: 'Laoudo', desc: '固定邮箱，手动配置使用' },
+  freemail: { title: 'Freemail', desc: '基于 Cloudflare Worker 的自建邮箱服务' },
+  mail2925: { title: '2925 Mail', desc: '使用 2925 WebMail 会话收件箱' },
+  moemail: { title: 'MoeMail', desc: '自动创建临时邮箱并轮询邮件' },
+  skymail: { title: 'SkyMail', desc: 'CloudMail 兼容接口' },
+  maliapi: { title: 'MaliAPI', desc: '基于 API Key 的临时邮箱服务' },
+  gptmail: { title: 'GPTMail', desc: '通过 GPTMail API 生成临时邮箱' },
+  opentrashmail: { title: 'OpenTrashMail', desc: '兼容 OpenTrashMail 服务端接口' },
+  tempmail_lol: { title: 'TempMail.lol', desc: '开箱即用，无需额外配置' },
+  duckmail: { title: 'DuckMail', desc: '自动生成地址并拉取邮件' },
+  duckduckgo: { title: 'DuckDuckGo Email Protection', desc: '通过 Duck 地址和 Gmail 收取验证码邮件' },
+  cfworker: { title: 'CF Worker 邮箱', desc: '自建 Worker 邮箱服务' },
+  sms_provider: { title: 'SMS 接码', desc: '用于 ChatGPT add-phone 阶段' },
+  default_captcha_solver: { title: '验证码服务', desc: '配置注册过程中的打码方式' },
+  cpa_api_url: { title: 'CPA 面板', desc: '注册完成后自动上传到 CPA 平台' },
+  sub2api_api_url: { title: 'Sub2API 面板', desc: '注册完成后自动上传到 Sub2API 平台' },
+  cpa_cleanup_enabled: { title: 'CPA 自动维护', desc: '定时清理错误凭证并自动补注册' },
+  team_manager_url: { title: 'Team Manager', desc: '上传到自建 Team Manager 系统' },
+  codex_proxy_url: { title: 'CodexProxy', desc: '注册完成后自动上传到 CodexProxy 平台' },
+  smstome_cookie: { title: 'SMSToMe 手机验证', desc: 'ChatGPT add-phone 阶段自动取号和收码' },
+  cliproxyapi_base_url: { title: 'CLIProxyAPI', desc: '用于 CLIProxyAPI 管理页登录' },
+  grok2api_url: { title: 'grok2api', desc: '注册成功后自动导入 grok2api' },
+  kiro_manager_path: { title: 'Kiro Account Manager', desc: '注册成功后自动写入本地账号文件' },
+}
+
+const FIELD_UI_OVERRIDES: Record<string, Partial<FieldConfig>> = {
+  sms_provider: { label: '在线接码平台' },
+  smsbower_country: { label: '国家代码列表' },
+  smsbower_type: { label: '号码质量' },
+  smsbower_max_price: { label: '最高单价（USD）' },
+  smsbower_min_price: { label: '最低单价（USD，可选）' },
+  smsbower_phone_attempts: { label: '每国取号次数' },
+  smsbower_add_phone_send_attempts: { label: 'add-phone 发送尝试' },
+  smsbower_otp_timeout_seconds: { label: '等码超时（秒）' },
+  smsbower_code_attempts: { label: '验证码重试次数' },
+  smsbower_provider_ids: { label: '指定供应商 ID' },
+  smsbower_except_provider_ids: { label: '排除供应商 ID' },
+  smstome_country_slugs: { label: '国家列表' },
+  smstome_phone_attempts: { label: '手机号尝试次数' },
+  smstome_otp_timeout_seconds: { label: '等码超时（秒）' },
+  smstome_poll_interval_seconds: { label: '轮询间隔（秒）' },
+  smstome_sync_max_pages_per_country: { label: '每国同步页数' },
+  mail2925_alias_mode: { label: '别名模式' },
+  mail2925_domain: { label: '别名域名' },
+  duckduckgo_gmail_api_mode: { label: 'Gmail 模式' },
+  duckduckgo_alias_mode: { label: 'Duck 地址模式' },
+  duckduckgo_alias_rotation: { label: 'Duck 地址轮换' },
+  luckmail_email_type: { label: '邮箱类型' },
+  codex_proxy_upload_type: { label: '上传类型' },
+  cliproxyapi_management_key: { label: '管理口令' },
+}
+
+const SELECT_OPTION_OVERRIDES: Record<string, Record<string, string>> = {
+  default_executor: {
+    protocol: 'API 协议（无浏览器）',
+    headless: '无头浏览器',
+    headed: '有头浏览器',
+  },
+  default_captcha_solver: {
+    yescaptcha: 'YesCaptcha',
+    local_solver: '本地 Solver (Camoufox)',
+    manual: '手动',
+  },
+  mail2925_alias_mode: {
+    plus: 'plus',
+    main: 'main',
+    random: 'random',
+  },
+  duckduckgo_gmail_api_mode: {
+    imap: 'IMAP',
+    gmail_api: 'Gmail API',
+  },
+  duckduckgo_alias_mode: {
+    fixed: '固定地址',
+    pool: '地址池',
+    auto_generate: '自动生成',
+  },
+  duckduckgo_alias_rotation: {
+    random: '随机',
+    round_robin: '轮询',
+  },
+  luckmail_email_type: {
+    ms_graph: 'Microsoft Graph',
+    ms_imap: 'Microsoft IMAP',
+    self_built: '自建邮箱',
+  },
+  codex_proxy_upload_type: {
+    at: 'AT (Access Token)',
+    rt: 'RT (Refresh Token)',
+  },
+}
+
+function getSectionKey(section: SectionConfig) {
+  return section.provider || section.fields[0]?.key || section.title
+}
+
+function getSectionDisplayTitle(section: SectionConfig) {
+  return SECTION_UI_OVERRIDES[getSectionKey(section)]?.title || section.title
+}
+
+function sectionHasField(section: SectionConfig, fieldKey: string) {
+  return section.fields.some((field) => field.key === fieldKey)
+}
+
+function isSmsProviderSection(section: SectionConfig) {
+  return sectionHasField(section, 'sms_provider')
+}
+
+function isSmstomeSection(section: SectionConfig) {
+  return sectionHasField(section, 'smstome_cookie')
+}
+
+function isLegacyPaymentSection(section: SectionConfig) {
+  return sectionHasField(section, 'payment_auto_plan')
 }
 
 const TAB_ITEMS = [
@@ -257,6 +327,27 @@ const TAB_ITEMS = [
           { key: 'duckmail_bearer', label: 'Bearer Token', placeholder: 'kevin273945', secret: true },
           { key: 'duckmail_domain', label: '自定义域名', placeholder: '留空则从 Provider URL 推导' },
           { key: 'duckmail_api_key', label: 'API Key（私有域名）', placeholder: 'dk_xxx（domain.duckmail.sbs 获取）', secret: true },
+        ],
+      },
+      {
+        title: 'DuckDuckGo Email Protection',
+        provider: 'duckduckgo',
+        desc: '?? @duck.com ????? Gmail IMAP ? Gmail API ???? OTP',
+        fields: [
+          { key: 'duckduckgo_email', label: 'Duck Address', placeholder: 'name@duck.com' },
+          { key: 'duckduckgo_gmail_address', label: 'Gmail Address', placeholder: 'name@gmail.com' },
+          { key: 'duckduckgo_gmail_app_password', label: 'Gmail App Password', placeholder: '16-char app password', secret: true },
+          { key: 'duckduckgo_gmail_api_mode', label: 'Gmail Mode', placeholder: 'imap / gmail_api' },
+          { key: 'duckduckgo_imap_host', label: 'IMAP Host', placeholder: 'imap.gmail.com' },
+          { key: 'duckduckgo_imap_port', label: 'IMAP Port', placeholder: '993' },
+          { key: 'duckduckgo_mailbox', label: 'Mailbox', placeholder: 'INBOX' },
+          { key: 'duckduckgo_all_mailbox', label: 'All Mailbox', placeholder: '[Gmail]/All Mail' },
+          { key: 'duckduckgo_gmail_api_credentials', label: 'Gmail API Credentials JSON', placeholder: '{"installed": {...}}', secret: true },
+          { key: 'duckduckgo_gmail_api_token', label: 'Gmail API Token JSON', placeholder: '{"refresh_token": "..."}', secret: true },
+          { key: 'duckduckgo_api_token', label: 'Duck API Token', placeholder: 'Duck Email Protection token', secret: true },
+          { key: 'duckduckgo_alias_mode', label: 'Duck Address Mode', placeholder: 'fixed / pool / auto_generate' },
+          { key: 'duckduckgo_alias_rotation', label: 'Duck Rotation', placeholder: 'random / round_robin' },
+          { key: 'duckduckgo_private_addresses', label: 'Duck Private Addresses', placeholder: 'one@duck.com\ntwo@duck.com' },
         ],
       },
       {
@@ -497,6 +588,12 @@ const TAB_ITEMS = [
     icon: <LockOutlined />,
     sections: [],
   },
+  {
+    key: 'claude',
+    label: 'Claude 导入',
+    icon: <ApiOutlined />,
+    sections: [],
+  },
 ]
 
 interface FieldConfig {
@@ -505,6 +602,7 @@ interface FieldConfig {
   placeholder?: string
   type?: 'select' | 'input' | 'boolean'
   secret?: boolean
+  span?: 1 | 2
 }
 
 interface SectionConfig {
@@ -722,7 +820,12 @@ function parseStoredDomainList(value: unknown): string[] {
 
 function ConfigField({ field }: { field: FieldConfig }) {
   const [showSecret, setShowSecret] = useState(false)
-  const options = SELECT_FIELDS[field.key]
+  const mergedField = { ...field, ...(FIELD_UI_OVERRIDES[field.key] || {}) }
+  const options =
+    SELECT_FIELDS[field.key] ||
+    (SELECT_OPTION_OVERRIDES[field.key]
+      ? Object.entries(SELECT_OPTION_OVERRIDES[field.key]).map(([value, label]) => ({ value, label }))
+      : undefined)
   const isBooleanField = field.type === 'boolean'
   const helpText =
     field.key === 'default_executor'
@@ -736,19 +839,20 @@ function ConfigField({ field }: { field: FieldConfig }) {
       : undefined
 
   return (
+    <div className={`settings-field${mergedField.span === 2 ? ' settings-field--full' : ''}`}>
     <Form.Item
-      label={field.label}
+      label={mergedField.label}
       name={field.key}
       extra={helpText}
       valuePropName={isBooleanField ? 'checked' : undefined}
     >
       {options ? (
-        <Select options={options} style={{ width: '100%' }} />
+        <Select options={options} style={{ width: '100%' }} popupClassName="settings-select-dropdown" />
       ) : isBooleanField ? (
         <Switch checkedChildren="开启" unCheckedChildren="关闭" />
       ) : field.secret ? (
         <Input.Password
-          placeholder={field.placeholder}
+          placeholder={mergedField.placeholder}
           visibilityToggle={{
             visible: !showSecret,
             onVisibleChange: setShowSecret,
@@ -756,32 +860,221 @@ function ConfigField({ field }: { field: FieldConfig }) {
           iconRender={(visible) => (visible ? <EyeOutlined /> : <EyeInvisibleOutlined />)}
         />
       ) : (
-        <Input placeholder={field.placeholder} />
+        <Input placeholder={mergedField.placeholder} />
       )}
     </Form.Item>
+    </div>
   )
 }
 
 function ConfigSection({ form, section }: { form: any; section: SectionConfig }) {
   const showPaymentSummary = section.fields.some((field) => field.key === 'payment_auto_plan')
   const allFields = showPaymentSummary ? [...section.fields, ...EXTRA_PAYMENT_FIELDS] : section.fields
+  const sectionKey = getSectionKey(section)
+  const sectionUi = SECTION_UI_OVERRIDES[sectionKey] || {}
+
+  const paymentPrimaryFields = allFields.filter((field) =>
+    [
+      'payment_auto_plan',
+      'payment_plus_flow_order',
+      'payment_method',
+      'payment_provider',
+      'payment_skip_if_not_free',
+      'payment_auto_cancel_after_subscribe',
+      'payment_gopay_auto_register',
+      'payment_checkout_ui_mode',
+      'payment_billing_country',
+    ].includes(field.key),
+  )
+
+  const paymentCardFields = allFields.filter((field) =>
+    [
+      'payment_card_number',
+      'payment_card_exp_month',
+      'payment_card_exp_year',
+      'payment_card_cvc',
+      'payment_billing_name',
+      'payment_billing_address',
+      'payment_billing_city',
+      'payment_billing_state',
+      'payment_billing_zip',
+    ].includes(field.key),
+  )
+
+  const paymentGopayFields = allFields.filter((field) =>
+    [
+      'payment_gopay_phone',
+      'payment_gopay_pin',
+      'payment_gopay_otp_file',
+      'payment_gopay_otp_url',
+      'payment_gopay_sms_country',
+      'payment_gopay_sms_service',
+      'payment_gopay_otp_retries',
+      'wa_relay_src_dir',
+      'wa_relay_proxy_url',
+      'payment_android_avd_name',
+      'payment_android_serial',
+      'payment_android_headless',
+      'payment_android_gojek_apk',
+      'payment_android_gopay_apk',
+      'payment_android_adb_path',
+      'payment_android_emulator_path',
+      'payment_gojek_app_version',
+    ].includes(field.key),
+  )
+
+  const paymentProxyFields = allFields.filter((field) =>
+    [
+      'payment_promo_proxy_url',
+      'payment_promo_proxy_geo',
+      'payment_paypal_proxy_url',
+      'payment_proxy_pool',
+      'payment_max_retries',
+    ].includes(field.key),
+  )
+
+  const paymentAdvancedFields = allFields.filter(
+    (field) =>
+      ![
+        ...paymentPrimaryFields,
+        ...paymentCardFields,
+        ...paymentGopayFields,
+        ...paymentProxyFields,
+      ].some((item) => item.key === field.key),
+  )
 
   return (
-    <Card title={section.title} extra={section.desc && <span style={{ fontSize: 12, color: '#7a8ba3' }}>{section.desc}</span>} style={{ marginBottom: 16 }}>
+    <Card
+      id={`settings-section-${section.title}`}
+      title={sectionUi.title || section.title}
+      extra={(sectionUi.desc || section.desc) && <span style={{ fontSize: 12, color: '#7a8ba3' }}>{sectionUi.desc || section.desc}</span>}
+      style={{ marginBottom: 16 }}
+    >
       {showPaymentSummary ? <PaymentUpgradeSummary form={form} /> : null}
-      {allFields.map((field) => (
-        <ConfigField key={field.key} field={field} />
-      ))}
+      {showPaymentSummary ? (
+        <Collapse
+          bordered={false}
+          defaultActiveKey={['primary']}
+          className="settings-collapse"
+          items={[
+            {
+              key: 'primary',
+              label: '支付策略',
+              children: (
+                <div className="settings-fields-grid">
+                  {paymentPrimaryFields.map((field) => (
+                    <ConfigField key={field.key} field={field} />
+                  ))}
+                </div>
+              ),
+            },
+            {
+              key: 'card',
+              label: '信用卡与账单信息',
+              children: (
+                <div className="settings-fields-grid">
+                  {paymentCardFields.map((field) => (
+                    <ConfigField key={field.key} field={{ ...field, span: field.key === 'payment_card_number' ? 2 : field.span }} />
+                  ))}
+                </div>
+              ),
+            },
+            {
+              key: 'gopay',
+              label: 'GoPay / Android',
+              children: (
+                <div className="settings-fields-grid">
+                  {paymentGopayFields.map((field) => (
+                    <ConfigField
+                      key={field.key}
+                      field={{
+                        ...field,
+                        span:
+                          field.key.includes('_path') ||
+                          field.key.includes('_url') ||
+                          field.key === 'wa_relay_src_dir'
+                            ? 2
+                            : field.span,
+                      }}
+                    />
+                  ))}
+                </div>
+              ),
+            },
+            {
+              key: 'proxy',
+              label: '代理与重试',
+              children: (
+                <div className="settings-fields-grid">
+                  {paymentProxyFields.map((field) => (
+                    <ConfigField
+                      key={field.key}
+                      field={{ ...field, span: field.key.includes('proxy') ? 2 : field.span }}
+                    />
+                  ))}
+                </div>
+              ),
+            },
+            {
+              key: 'advanced',
+              label: '高级项',
+              children: (
+                <div className="settings-fields-grid">
+                  {paymentAdvancedFields.map((field) => (
+                    <ConfigField
+                      key={field.key}
+                      field={{
+                        ...field,
+                        span:
+                          field.key.includes('_url') ||
+                          field.key.includes('_key') ||
+                          field.key.includes('_path') ||
+                          field.key.includes('_ids') ||
+                          field.key.includes('_json')
+                            ? 2
+                            : field.span,
+                      }}
+                    />
+                  ))}
+                </div>
+              ),
+            },
+          ]}
+        />
+      ) : (
+        <div className="settings-fields-grid">
+          {allFields.map((field) => (
+            <ConfigField
+              key={field.key}
+              field={{
+                ...field,
+                span:
+                  field.key.includes('_url') ||
+                  field.key.includes('_path') ||
+                  field.key.includes('_json') ||
+                  field.key.includes('_addresses') ||
+                  field.key.includes('_domains') ||
+                  field.key.includes('_provider_ids') ||
+                  field.key.includes('_group_ids')
+                    ? 2
+                    : field.span,
+              }}
+            />
+          ))}
+        </div>
+      )}
     </Card>
   )
 }
 
-function MailboxSections({ form, sections }: { form: any; sections: SectionConfig[] }) {
+function _MailboxSectionsLegacy({ form, sections }: { form: any; sections: SectionConfig[] }) {
   const selectedProvider = Form.useWatch('mail_provider', form) || 'luckmail'
   const baseSections = sections.filter((section) => !section.provider)
   const providerSections = sections.filter((section) => section.provider)
   const activeProviderSection =
     providerSections.find((section) => section.provider === selectedProvider) || providerSections[0]
+  const activeProviderKey = activeProviderSection ? getSectionKey(activeProviderSection) : ''
+  const activeProviderUi = activeProviderKey ? SECTION_UI_OVERRIDES[activeProviderKey] || {} : {}
 
   return (
     <>
@@ -791,18 +1084,349 @@ function MailboxSections({ form, sections }: { form: any; sections: SectionConfi
 
       {activeProviderSection ? (
         <Card
-          title={activeProviderSection.title}
-          extra={activeProviderSection.desc && <span style={{ fontSize: 12, color: '#7a8ba3' }}>{activeProviderSection.desc}</span>}
+          id={`settings-section-${activeProviderSection.title}`}
+          title={activeProviderUi.title || activeProviderSection.title}
+          extra={(activeProviderUi.desc || activeProviderSection.desc) && <span style={{ fontSize: 12, color: '#7a8ba3' }}>{activeProviderUi.desc || activeProviderSection.desc}</span>}
           style={{ marginBottom: 16 }}
         >
           {activeProviderSection.fields.length > 0 ? (
-            activeProviderSection.fields.map((field) => <ConfigField key={field.key} field={field} />)
+            <div className="settings-fields-grid">
+              {activeProviderSection.fields.map((field) => <ConfigField key={field.key} field={field} />)}
+            </div>
           ) : (
             <Typography.Text type="secondary">当前邮箱服务无需额外配置。</Typography.Text>
           )}
         </Card>
       ) : null}
     </>
+  )
+}
+
+function UnifiedMailboxSections({ form, sections }: { form: any; sections: SectionConfig[] }) {
+  const selectedProvider = Form.useWatch('mail_provider', form) || 'luckmail'
+  const baseSections = sections.filter((section) => !section.provider)
+  const providerSections = sections.filter((section) => section.provider)
+  const selectorSection = baseSections.find((section) => section.fields.some((field) => field.key === 'mail_provider'))
+  const extraSections = baseSections.filter(
+    (section) =>
+      section !== selectorSection &&
+      !isSmsProviderSection(section) &&
+      !isSmstomeSection(section) &&
+      !isLegacyPaymentSection(section),
+  )
+  const activeProviderSection =
+    providerSections.find((section) => section.provider === selectedProvider) || providerSections[0]
+  const activeProviderKey = activeProviderSection ? getSectionKey(activeProviderSection) : ''
+  const activeProviderUi = activeProviderKey ? SECTION_UI_OVERRIDES[activeProviderKey] || {} : {}
+
+  return (
+    <>
+      {activeProviderSection ? (
+        <Card
+          id={`settings-section-${activeProviderSection.title}`}
+          title={activeProviderUi.title || activeProviderSection.title}
+          extra={
+            <span style={{ fontSize: 12, color: '#7a8ba3' }}>
+              {activeProviderUi.desc || activeProviderSection.desc || '选择服务后，这里会直接显示对应配置。'}
+            </span>
+          }
+          style={{ marginBottom: 16 }}
+        >
+          {selectorSection ? (
+            <div className="settings-provider-hero">
+              <div className="settings-provider-hero__main">
+                <div>
+                  <Typography.Text strong>默认邮箱服务</Typography.Text>
+                  <Typography.Paragraph type="secondary" style={{ margin: '6px 0 0' }}>
+                    切换后，下方配置会立刻联动显示，不需要再往下滚动找对应服务。
+                  </Typography.Paragraph>
+                </div>
+                <Tag color="blue">{activeProviderUi.title || activeProviderSection.title}</Tag>
+              </div>
+              <div className="settings-provider-hero__field">
+                <ConfigField field={{ ...selectorSection.fields[0], label: '邮箱服务', span: 2 }} />
+              </div>
+            </div>
+          ) : null}
+
+          {activeProviderSection.fields.length > 0 ? (
+            <div className="settings-fields-grid">
+              {activeProviderSection.fields.map((field) => (
+                <ConfigField key={field.key} field={field} />
+              ))}
+            </div>
+          ) : (
+            <Typography.Text type="secondary">当前邮箱服务无需额外配置。</Typography.Text>
+          )}
+        </Card>
+      ) : null}
+
+      {extraSections.map((section) => (
+        <ConfigSection key={section.title} form={form} section={section} />
+      ))}
+    </>
+  )
+}
+
+function ChatGPTPhoneSections({ form, sections }: { form: any; sections: SectionConfig[] }) {
+  const smsSection = sections.find(isSmsProviderSection)
+  const smstomeSection = sections.find(isSmstomeSection)
+  const otherSections = sections.filter((section) => !isSmsProviderSection(section) && !isSmstomeSection(section))
+
+  return (
+    <>
+      {smsSection || smstomeSection ? (
+        <Card
+          id="settings-section-chatgpt-phone"
+          title="ChatGPT 手机验证"
+          extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>把 add-phone 相关能力放在同一块里，少来回找配置。</span>}
+          style={{ marginBottom: 16 }}
+        >
+          <div className="settings-inline-summary">
+            <Typography.Text type="secondary">
+              在线接码平台和 SMSToMe 都服务于 ChatGPT 的 add-phone，但来源不同。
+              `SMS Provider` 负责在线买号接码，`SMSToMe` 负责号码池和轮询短信。
+            </Typography.Text>
+          </div>
+
+          <div className="settings-dual-panels">
+            {smsSection ? (
+              <Card
+                size="small"
+                className="settings-subcard"
+                title="在线接码平台"
+                extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>SMSBOWER / 5SIM / HeroSMS</span>}
+              >
+                <div className="settings-fields-grid">
+                  {smsSection.fields.map((field) => (
+                    <ConfigField key={field.key} field={field} />
+                  ))}
+                </div>
+              </Card>
+            ) : null}
+
+            {smstomeSection ? (
+              <Card
+                size="small"
+                className="settings-subcard"
+                title="SMSToMe 号码池"
+                extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>Cookie 同步、号码池、短信轮询</span>}
+              >
+                <div className="settings-fields-grid">
+                  {smstomeSection.fields.map((field) => (
+                    <ConfigField key={field.key} field={field} />
+                  ))}
+                </div>
+              </Card>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
+
+      {otherSections.map((section) => (
+        <ConfigSection key={section.title} form={form} section={section} />
+      ))}
+    </>
+  )
+}
+
+function ChatGPTPhoneSectionsStacked({ form, sections }: { form: any; sections: SectionConfig[] }) {
+  const smsSection = sections.find(isSmsProviderSection)
+  const smstomeSection = sections.find(isSmstomeSection)
+  const otherSections = sections.filter((section) => !isSmsProviderSection(section) && !isSmstomeSection(section))
+  const phoneSource = Form.useWatch('chatgpt_phone_source', form) || 'smsbower'
+  const phoneSourceField: FieldConfig = {
+    key: 'chatgpt_phone_source',
+    label: '接码服务',
+    type: 'select',
+    span: 2,
+  }
+
+  useEffect(() => {
+    if (!['smsbower', '5sim', 'herosms'].includes(phoneSource)) return
+    if (form.getFieldValue('sms_provider') === phoneSource) return
+    form.setFieldValue('sms_provider', phoneSource)
+  }, [form, phoneSource])
+
+  return (
+    <>
+      {smsSection || smstomeSection ? (
+        <Card
+          id="settings-section-chatgpt-phone"
+          title="ChatGPT 手机验证"
+          extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>一个下拉统一切换，不再重复选两次接码平台。</span>}
+          style={{ marginBottom: 16 }}
+        >
+          <div className="settings-inline-summary">
+            <Typography.Text type="secondary">
+              和邮箱服务一样，先选手机号来源，下面只显示当前方案需要填写的配置。
+            </Typography.Text>
+          </div>
+
+          <div className="settings-stack-panel">
+            <div className="settings-stack-panel__header">
+              <div>
+                <Typography.Text strong>手机号来源</Typography.Text>
+                <Typography.Paragraph type="secondary" style={{ margin: '6px 0 0' }}>
+                  推荐默认用 SMSBOWER。只有你已经有现成的 SMSToMe Cookie 或号码池时，再切到 SMSToMe。
+                </Typography.Paragraph>
+              </div>
+              <Tag color={phoneSource === 'smstome' ? 'gold' : 'blue'}>
+                {phoneSource === 'smsbower' ? '推荐默认' : phoneSource === 'smstome' ? '号码池模式' : '在线接码'}
+              </Tag>
+            </div>
+            <div className="settings-fields-grid">
+              <ConfigField field={phoneSourceField} />
+            </div>
+          </div>
+
+          {phoneSource === 'smstome' ? (
+            smstomeSection ? (
+              <div className="settings-stack-panel">
+                <div className="settings-stack-panel__header">
+                  <div>
+                    <Typography.Text strong>SMSToMe 配置</Typography.Text>
+                    <Typography.Paragraph type="secondary" style={{ margin: '6px 0 0' }}>
+                      适合你已经有 SMSToMe cookie 或号码池资源的情况。没有的话建议切回 SMSBOWER。
+                    </Typography.Paragraph>
+                  </div>
+                  <Tag color="gold">号码池</Tag>
+                </div>
+                <div className="settings-fields-grid">
+                  {smstomeSection.fields.map((field) => (
+                    <ConfigField
+                      key={field.key}
+                      field={{
+                        ...field,
+                        span: field.key === 'smstome_cookie' ? 2 : field.span,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null
+          ) : smsSection ? (
+            <div className="settings-stack-panel">
+                <div className="settings-stack-panel__header">
+                  <div>
+                    <Typography.Text strong>在线接码配置</Typography.Text>
+                    <Typography.Paragraph type="secondary" style={{ margin: '6px 0 0' }}>
+                      默认推荐 SMSBOWER。只有你明确使用 5SIM 或 HeroSMS 时，再切换并填写对应 key。
+                    </Typography.Paragraph>
+                  </div>
+                <Tag color="blue">{phoneSource === 'smsbower' ? 'SMSBOWER' : phoneSource === '5sim' ? '5SIM' : 'HeroSMS'}</Tag>
+              </div>
+              <div className="settings-fields-grid">
+                {smsSection.fields
+                  .filter((field) => {
+                    if (field.key === 'sms_provider') return false
+                    if (field.key === 'smsbower_api_key') return phoneSource === 'smsbower'
+                    if (field.key === 'sim5_api_key') return phoneSource === '5sim'
+                    if (field.key === 'herosms_api_key') return phoneSource === 'herosms'
+                    return true
+                  })
+                  .map((field) => (
+                    <ConfigField
+                      key={field.key}
+                      field={{
+                        ...field,
+                        span:
+                          field.key.includes('_provider_ids') ||
+                          field.key.includes('_except_provider_ids')
+                            ? 2
+                            : field.span,
+                        label:
+                          field.key === 'smsbower_api_key'
+                            ? 'SMSBOWER API Key'
+                            : field.key === 'sim5_api_key'
+                              ? '5SIM API Key'
+                                : field.key === 'herosms_api_key'
+                                  ? 'HeroSMS API Key'
+                                  : field.label,
+                      }}
+                    />
+                  ))}
+              </div>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {otherSections.map((section) => (
+        <ConfigSection key={section.title} form={form} section={section} />
+      ))}
+    </>
+  )
+}
+
+void ChatGPTPhoneSections
+
+function ChatGPTFlowSummary({ form }: { form: any }) {
+  const executor = Form.useWatch('default_executor', form) || 'protocol'
+  const captcha = Form.useWatch('default_captcha_solver', form) || 'yescaptcha'
+  const phoneSource = Form.useWatch('chatgpt_phone_source', form) || 'smsbower'
+
+  const executorLabel =
+    SELECT_OPTION_OVERRIDES.default_executor?.[executor] || executor
+  const captchaLabel =
+    SELECT_OPTION_OVERRIDES.default_captcha_solver?.[captcha] || captcha
+  const phoneLabel =
+    phoneSource === 'smsbower'
+      ? 'SMSBOWER'
+      : phoneSource === 'smstome'
+        ? 'SMSToMe'
+        : phoneSource === '5sim'
+          ? '5SIM'
+          : phoneSource === 'herosms'
+            ? 'HeroSMS'
+            : phoneSource
+
+  return (
+    <Card className="settings-flow-summary" bordered={false}>
+      <div className="settings-flow-summary__head">
+        <div>
+          <Typography.Text strong>ChatGPT 注册流程总览</Typography.Text>
+          <Typography.Paragraph type="secondary" style={{ margin: '6px 0 0' }}>
+            这里汇总最影响成功率的三段配置，下面再改细节，避免来回找入口。
+          </Typography.Paragraph>
+        </div>
+        <Tag color="cyan">推荐先检查这里</Tag>
+      </div>
+      <div className="settings-flow-summary__grid">
+        <div className="settings-flow-summary__item">
+          <span>执行方式</span>
+          <strong>{executorLabel}</strong>
+        </div>
+        <div className="settings-flow-summary__item">
+          <span>验证码</span>
+          <strong>{captchaLabel}</strong>
+        </div>
+        <div className="settings-flow-summary__item">
+          <span>手机接码</span>
+          <strong>{phoneLabel}</strong>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+function ChatGPTManualPlusSection() {
+  return (
+    <Card
+      id="settings-section-chatgpt-plus-manual"
+      title="Plus 手动升级"
+      extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>自动 Plus / GoPay 流程已下线，保留账号直取长链</span>}
+      style={{ marginBottom: 16 }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Alert
+          type="info"
+          showIcon
+          message="现在只保留手动支付，但长链由系统直接代取"
+          description="请在账号页右侧操作菜单中使用“获取 Plus 长链”。系统会直接读取该账号的 access_token 生成长链，然后你手动打开支付即可。"
+        />
+      </div>
+    </Card>
   )
 }
 
@@ -933,7 +1557,7 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
   )
 }
 
-function SolverStatus() {
+function _SolverStatusLegacy() {
   const [running, setRunning] = useState<boolean | null>(null)
 
   const checkSolver = async () => {
@@ -987,6 +1611,70 @@ function SolverStatus() {
     </Card>
   )
 }
+
+function SolverStatusCompact() {
+  const [running, setRunning] = useState<boolean | null>(null)
+
+  const checkSolver = async () => {
+    try {
+      const d = await apiFetch('/solver/status')
+      setRunning(d.running)
+    } catch {
+      setRunning(false)
+    }
+  }
+
+  const restartSolver = async () => {
+    await apiFetch('/solver/restart', { method: 'POST' })
+    setRunning(null)
+    setTimeout(checkSolver, 2000)
+  }
+
+  useEffect(() => {
+    checkSolver()
+    const timer = window.setInterval(checkSolver, 5000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return (
+    <Card title="Turnstile Solver" size="small" style={{ marginBottom: 16 }}>
+      <div className="settings-status-card">
+        <div className="settings-status-card__main">
+          <Space size={10}>
+            {running === null ? (
+              <SyncOutlined spin style={{ color: '#7a8ba3' }} />
+            ) : running ? (
+              <CheckCircleOutlined style={{ color: '#10b981' }} />
+            ) : (
+              <CloseCircleOutlined style={{ color: '#ef4444' }} />
+            )}
+            <div>
+              <div className="settings-status-card__title">
+                {running === null ? '正在检测状态' : running ? 'Solver 运行中' : 'Solver 未运行'}
+              </div>
+              <Typography.Text type="secondary">
+                {running
+                  ? 'Turnstile 验证可直接走本地求解。'
+                  : '建议先重启 Solver，避免任务卡在验证码阶段。'}
+              </Typography.Text>
+            </div>
+          </Space>
+          <Space wrap>
+            <Tag color={running ? 'success' : running === null ? 'processing' : 'error'}>
+              {running === null ? '检测中' : running ? '在线' : '离线'}
+            </Tag>
+            <Button size="small" onClick={restartSolver}>
+              重启 Solver
+            </Button>
+          </Space>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+void _MailboxSectionsLegacy
+void _SolverStatusLegacy
 
 function WaRelayStatus() {
   const [info, setInfo] = useState<any>(null)
@@ -1189,6 +1877,229 @@ function WaRelayStatus() {
   )
 }
 
+void WaRelayStatus
+
+function ClaudeImportPanel() {
+  const [mode, setMode] = useState<'session_key' | 'tokens'>('session_key')
+  const [sessionKey, setSessionKey] = useState('')
+  const [accessToken, setAccessToken] = useState('')
+  const [refreshToken, setRefreshToken] = useState('')
+  const [emailAddress, setEmailAddress] = useState('')
+  const [expiresAt, setExpiresAt] = useState('')
+  const [orgUuid, setOrgUuid] = useState('')
+  const [accountUuid, setAccountUuid] = useState('')
+  const [importName, setImportName] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  const doImport = async () => {
+    setImporting(true)
+    setResult(null)
+    try {
+      let data: any
+      if (mode === 'session_key') {
+        if (!sessionKey.trim()) {
+          message.warning('请输入 sessionKey')
+          setImporting(false)
+          return
+        }
+        data = await apiFetch('/claude/import-from-session-key', {
+          method: 'POST',
+          body: JSON.stringify({
+            session_key: sessionKey.trim(),
+            name: importName.trim() || undefined,
+          }),
+        })
+      } else {
+        if (!accessToken.trim() || !refreshToken.trim()) {
+          message.warning('请输入 access_token 和 refresh_token')
+          setImporting(false)
+          return
+        }
+        data = await apiFetch('/claude/import-from-tokens', {
+          method: 'POST',
+          body: JSON.stringify({
+            access_token: accessToken.trim(),
+            refresh_token: refreshToken.trim(),
+            email_address: emailAddress.trim(),
+            expires_at: expiresAt.trim() ? parseInt(expiresAt.trim(), 10) : undefined,
+            org_uuid: orgUuid.trim(),
+            account_uuid: accountUuid.trim(),
+            name: importName.trim() || undefined,
+          }),
+        })
+      }
+      setResult({ ok: data.ok, message: data.message || '未知结果' })
+      if (data.ok) {
+        message.success(data.message || '导入成功')
+      } else {
+        message.error(data.message || '导入失败')
+      }
+    } catch (e: any) {
+      setResult({ ok: false, message: e?.message || '导入异常' })
+      message.error(e?.message || '导入异常')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="page-container">
+      <Card title="Claude 账号导入到 Sub2API">
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <div>
+            <Typography.Text strong style={{ marginRight: 12 }}>导入模式</Typography.Text>
+            <Segmented
+              value={mode}
+              onChange={(v) => setMode(v as 'session_key' | 'tokens')}
+              options={[
+                { label: 'Session Key（Cookie 交换）', value: 'session_key' },
+                { label: 'OAuth Token（直接导入）', value: 'tokens' },
+              ]}
+            />
+          </div>
+
+          {mode === 'session_key' ? (
+            <>
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Session Key</Typography.Text>
+                <Input.TextArea
+                  value={sessionKey}
+                  onChange={(e) => setSessionKey(e.target.value)}
+                  placeholder="sk-ant-sid01-..."
+                  rows={4}
+                  autoSize={{ minRows: 2, maxRows: 6 }}
+                />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  从浏览器 DevTools → Application → Cookies → claude.ai → sessionKey 获取
+                </Typography.Text>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Access Token</Typography.Text>
+                <Input.Password
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  placeholder="sk-ant-api03-..."
+                />
+              </div>
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Refresh Token</Typography.Text>
+                <Input.Password
+                  value={refreshToken}
+                  onChange={(e) => setRefreshToken(e.target.value)}
+                  placeholder="sk-ant-api03-..."
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Email Address</Typography.Text>
+                  <Input
+                    value={emailAddress}
+                    onChange={(e) => setEmailAddress(e.target.value)}
+                    placeholder="user@example.com"
+                  />
+                </div>
+                <div>
+                  <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Expires At (Unix)</Typography.Text>
+                  <Input
+                    value={expiresAt}
+                    onChange={(e) => setExpiresAt(e.target.value)}
+                    placeholder="1715800000"
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Org UUID（可选）</Typography.Text>
+                  <Input
+                    value={orgUuid}
+                    onChange={(e) => setOrgUuid(e.target.value)}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  />
+                </div>
+                <div>
+                  <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Account UUID（可选）</Typography.Text>
+                  <Input
+                    value={accountUuid}
+                    onChange={(e) => setAccountUuid(e.target.value)}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div>
+            <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>账号名称（可选）</Typography.Text>
+            <Input
+              value={importName}
+              onChange={(e) => setImportName(e.target.value)}
+              placeholder="留空则自动使用邮箱地址"
+            />
+          </div>
+
+          <Button type="primary" onClick={doImport} loading={importing}>
+            导入到 Sub2API
+          </Button>
+
+          {result && (
+            <Alert
+              type={result.ok ? 'success' : 'error'}
+              message={result.ok ? '成功' : '失败'}
+              description={result.message}
+              closable
+            />
+          )}
+        </Space>
+      </Card>
+
+      <Card title="查询远端账号">
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <div>
+            <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Email</Typography.Text>
+            <Input.Search
+              placeholder="输入邮箱地址查询 sub2api 中是否已存在"
+              enterButton="查询"
+              onSearch={async (value) => {
+                try {
+                  const data = await apiFetch(`/claude/query-account?email=${encodeURIComponent(value.trim())}`)
+                  if (data?.found) {
+                    message.success(`远端已存在 (ID: ${data.remote_account_id})`)
+                  } else if (data?.ok) {
+                    message.info('远端未发现，可以导入')
+                  } else {
+                    message.warning(data?.message || '查询失败')
+                  }
+                } catch (e: any) {
+                  message.error(e?.message || '查询异常')
+                }
+              }}
+            />
+          </div>
+        </Space>
+      </Card>
+
+      <Card title="说明">
+        <Typography.Paragraph style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
+          <strong>前置条件：</strong>请在「CLIProxyAPI / Sub2API」Tab 中先配置好
+          <code> sub2api_api_url </code>和<code> sub2api_api_key </code>。
+          <br />
+          <strong>Session Key 模式：</strong>将 Claude 登录后的
+          <code> sessionKey </code>Cookie 通过 Sub2API 的 CookieAuth 接口自动换取 OAuth Token 后创建账号。
+          <br />
+          <strong>OAuth Token 模式：</strong>直接使用已有的 access_token + refresh_token 创建账号，
+          不经过 CookieAuth 交换。
+          <br />
+          导入的账号在 Sub2API 中显示为 <code>platform=anthropic</code>、<code>type=oauth</code>。
+        </Typography.Paragraph>
+      </Card>
+    </div>
+  )
+}
+
 function IntegrationsPanel() {
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -1259,7 +2170,7 @@ function IntegrationsPanel() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="page-container">
       <Modal
         open={resultModal.open}
         title={resultModal.title}
@@ -1628,6 +2539,12 @@ export default function Settings() {
       if (!data.mail_provider) {
         data.mail_provider = 'luckmail'
       }
+      if (!data.chatgpt_phone_source) {
+        data.chatgpt_phone_source =
+          ['smsbower', '5sim', 'herosms'].includes(String(data.sms_provider || ''))
+            ? String(data.sms_provider)
+            : 'smsbower'
+      }
       if (!data.gptmail_base_url) {
         data.gptmail_base_url = 'https://mail.chatgpt.org.uk'
       }
@@ -1681,16 +2598,46 @@ export default function Settings() {
 
   const currentTab = TAB_ITEMS.find((t) => t.key === activeTab) as TabConfig
   const selectedMailProvider = Form.useWatch('mail_provider', form) || 'luckmail'
+  const currentSections = useMemo(() => {
+    if (activeTab === 'mailbox') {
+      const providerSections = currentTab.sections.filter((section) => section.provider)
+      const activeProviderSection =
+        providerSections.find((section) => section.provider === selectedMailProvider) || providerSections[0]
+      return [
+        ...(activeProviderSection ? [activeProviderSection] : []),
+        ...currentTab.sections.filter(
+          (section) =>
+            !section.provider &&
+            !sectionHasField(section, 'mail_provider') &&
+            !isSmsProviderSection(section) &&
+            !isSmstomeSection(section),
+        ),
+        ...(selectedMailProvider === 'cfworker'
+          ? [{ title: 'CF Worker 域名池', desc: '管理可用域名和启用状态', fields: [] }]
+          : []),
+      ]
+    }
+    if (activeTab === 'chatgpt') {
+      return [
+        { title: 'ChatGPT 手机验证', desc: '管理 add-phone 相关接码能力', fields: [] },
+        ...currentTab.sections.filter(
+          (section) => !isSmsProviderSection(section) && !isSmstomeSection(section) && !isLegacyPaymentSection(section),
+        ),
+      ]
+    }
+    return currentTab.sections
+  }, [activeTab, currentTab.sections, selectedMailProvider])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>全局配置</h1>
-        <p style={{ color: '#7a8ba3', marginTop: 4 }}>配置将持久化保存，注册任务自动使用</p>
-      </div>
+    <div className="page-container">
+      <PageHeader
+        eyebrow="Config"
+        title="配置中心"
+        subtitle="把常用配置集中到更短的操作路径里，减少滚动和来回切换。"
+      />
 
-      <div style={{ display: 'flex', gap: 24 }}>
-        <div style={{ width: 200 }}>
+      <div className="settings-layout">
+        <div className="settings-layout__nav">
           <Tabs
             tabPosition="left"
             activeKey={activeTab}
@@ -1700,37 +2647,71 @@ export default function Settings() {
               label: (
                 <span>
                   {t.icon}
-                  <span style={{ marginLeft: 8 }}>{t.label}</span>
+                  <span style={{ marginLeft: 8 }}>{TAB_LABEL_OVERRIDES[t.key] || t.label}</span>
                 </span>
               ),
             }))}
           />
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div className="settings-layout__content">
+          {currentSections.length > 1 ? (
+            <Card bordered={false} className="settings-section-nav" style={{ marginBottom: 16 }}>
+              <Space wrap>
+                {currentSections.map((section) => (
+                  <Button
+                    key={section.title}
+                    size="small"
+                    onClick={() => {
+                      const node = document.getElementById(`settings-section-${section.title}`)
+                      node?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }}
+                  >
+                    {getSectionDisplayTitle(section)}
+                  </Button>
+                ))}
+              </Space>
+            </Card>
+          ) : null}
           {activeTab === 'integrations' ? (
             <IntegrationsPanel />
           ) : activeTab === 'security' ? (
             <SecurityPanel />
+          ) : activeTab === 'claude' ? (
+            <ClaudeImportPanel />
           ) : (
             <Form form={form} layout="vertical">
-              {activeTab === 'captcha' ? <SolverStatus /> : null}
-              {activeTab === 'chatgpt' ? <WaRelayStatus /> : null}
+              {activeTab === 'captcha' ? <SolverStatusCompact /> : null}
+              {activeTab === 'chatgpt' ? (
+                <>
+                  <ChatGPTFlowSummary form={form} />
+                  <ChatGPTManualPlusSection />
+                </>
+              ) : null}
               {activeTab === 'mailbox' ? (
                 <>
-                  <MailboxSections form={form} sections={currentTab.sections} />
+                  <UnifiedMailboxSections form={form} sections={currentTab.sections} />
                   {selectedMailProvider === 'cfworker' ? <CFWorkerDomainPoolSection form={form} /> : null}
                 </>
+              ) : activeTab === 'chatgpt' ? (
+                <ChatGPTPhoneSectionsStacked form={form} sections={currentTab.sections} />
               ) : (
                 currentTab.sections.map((section) => <ConfigSection key={section.title} form={form} section={section} />)
               )}
-              <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
-                {saved ? '已保存 ✓' : '保存配置'}
-              </Button>
             </Form>
           )}
         </div>
       </div>
+      {activeTab !== 'integrations' && activeTab !== 'security' && activeTab !== 'claude' ? (
+        <div className="settings-save-bar">
+          <Typography.Text type="secondary">
+            {saved ? '配置已保存' : '修改后记得保存，当前页的调整会立即保留到配置文件。'}
+          </Typography.Text>
+          <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving}>
+            {saved ? '已保存' : '保存设置'}
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

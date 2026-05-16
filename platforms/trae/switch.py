@@ -15,6 +15,19 @@ from typing import Tuple
 logger = logging.getLogger(__name__)
 
 
+def _resolve_windows_trae_launch_target() -> str:
+    for path in (
+        os.environ.get("TRAE_APP_PATH", ""),
+        os.environ.get("TRAE_LNK_PATH", ""),
+        r"C:\Desktop\Trae.lnk",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Trae", "Trae.exe"),
+    ):
+        path = str(path or "").strip()
+        if path and os.path.exists(path):
+            return path
+    return ""
+
+
 def _get_trae_config_dir() -> str:
     """获取 Trae 配置目录路径"""
     system = platform.system()
@@ -141,6 +154,13 @@ def restart_trae_ide() -> Tuple[bool, str]:
             time.sleep(1.5)
             
             # 启动 Trae
+            trae_target = _resolve_windows_trae_launch_target()
+            if trae_target:
+                if trae_target.lower().endswith(".lnk"):
+                    os.startfile(trae_target)
+                else:
+                    subprocess.Popen([trae_target])
+                return True, f"Trae IDE restarted ({trae_target})"
             localappdata = os.environ.get("LOCALAPPDATA", "")
             trae_exe = os.path.join(localappdata, "Programs", "Trae", "Trae.exe")
             if os.path.exists(trae_exe):

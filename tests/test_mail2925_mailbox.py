@@ -48,6 +48,14 @@ class Mail2925MailboxTests(unittest.TestCase):
         self.assertEqual(account.email, "main@2925.com")
         self.assertEqual(account.extra["alias_mode"], "main")
 
+    def test_non_plus_alias_mode_maps_to_main_mailbox(self):
+        mailbox = self._build_mailbox(mail2925_alias_mode="non-plus")
+
+        account = mailbox.get_email()
+
+        self.assertEqual(account.email, "main@2925.com")
+        self.assertEqual(account.extra["alias_mode"], "main")
+
     def test_get_current_ids_reads_message_ids_from_web_client(self):
         mailbox = self._build_mailbox(mail2925_alias_mode="main")
         mailbox.web_client.list_responses = [
@@ -574,6 +582,18 @@ class Mail2925MailboxTests(unittest.TestCase):
         self.assertEqual(account.email, "3320665692a@2925.com")
         self.assertEqual(account.extra["base_email"], "3320665692a@2925.com")
 
+    def test_create_mailbox_accepts_full_email_as_login_name(self):
+        mailbox = self._build_mailbox(
+            mail2925_login_name="hotmail123@2925.com",
+            mail2925_domain="ignored.com",
+            mail2925_alias_mode="main",
+        )
+
+        account = mailbox.get_email()
+
+        self.assertEqual(account.email, "hotmail123@2925.com")
+        self.assertEqual(account.extra["base_email"], "hotmail123@2925.com")
+
     @patch("requests.Session")
     def test_web_client_login_uses_md5_password_and_stores_jwt_cookie(self, mock_session_cls):
         fake_session = _FakeRequestsSession()
@@ -616,10 +636,41 @@ class Mail2925MailboxTests(unittest.TestCase):
             fake_session.post_calls[1]["url"],
             "https://mail.2925.com/mailv2/auth/token",
         )
-        self.assertEqual(session.headers["Authorization"], "Bearer access-token")
-        self.assertIn("deviceUid", session.headers)
-        self.assertEqual(session.cookies.get("jwt_token"), "jwt-token")
-        self.assertEqual(session.cookies.get("auc"), "cookie-auc")
+
+    @patch("requests.Session")
+    def test_web_client_accepts_full_email_as_login_name(self, mock_session_cls):
+        fake_session = _FakeRequestsSession()
+        fake_session.post_responses = [
+            _FakeResponse(
+                {
+                    "code": 200,
+                    "result": {"success": True, "token": "access-token"},
+                },
+                cookies={"auc": "cookie-auc"},
+            ),
+            _FakeResponse({"code": 200, "result": "jwt-token"}),
+        ]
+        mock_session_cls.return_value = fake_session
+
+        client = Mail2925WebClient(
+            login_name="hotmail123@2925.com",
+            password="agou950523.",
+            domain="ignored.com",
+            proxy="http://127.0.0.1:7897",
+        )
+
+        client._ensure_session()
+
+        self.assertEqual(client.login_name, "hotmail123")
+        self.assertEqual(client.domain, "2925.com")
+        self.assertEqual(
+            fake_session.post_calls[0]["data"]["uname"],
+            "hotmail123@2925.com",
+        )
+        self.assertEqual(fake_session.headers["Authorization"], "Bearer access-token")
+        self.assertIn("deviceUid", fake_session.headers)
+        self.assertEqual(fake_session.cookies.get("jwt_token"), "jwt-token")
+        self.assertEqual(fake_session.cookies.get("auc"), "cookie-auc")
 
 
 class _FakeMail2925WebClient:

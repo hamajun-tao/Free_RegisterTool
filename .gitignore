@@ -73,11 +73,22 @@ CLAUDE.md
 .ace-tool/
 .openmcp/
 .playwright-mcp/
+.kiro/
+.codex-review/
 
 # Temp/debug files
 *_current.js
 *_error.html
 *_error.png
+backend-*.log
+backend-*.out.log
+backend-*.err.log
+gmail_credentials.json
+gmail_token.json
+gmail_oauth_state.txt
+allow_button_not_found.png
+__cfworker_admin.js
+__cfworker_index.js
 
 # Local scripts (keep project scripts, ignore personal test/run variants)
 *.local.bat

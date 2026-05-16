@@ -166,6 +166,7 @@ class _DesktopAuthCallbackServer:
 class KiroRegister:
     def __init__(self, proxy=None, tag="KIRO", headless=False):
         self.proxy = proxy
+        self.proxy_url = str(proxy).strip() if proxy else None
         self.tag = tag
         self.headless = headless
         self.log_fn = print
@@ -182,6 +183,15 @@ class KiroRegister:
 
     def _human_sleep(self, min_seconds: float = 0.18, max_seconds: float = 0.65):
         time.sleep(random.uniform(min_seconds, max_seconds))
+    
+    def _anti_detection_delay(self, min_seconds: float = 8.0, max_seconds: float = 20.0):
+        """
+        反检测延迟：在关键操作之间引入 8-20 秒随机延迟，模拟真实人类行为
+        用于：注册流程的关键步骤之间（邮箱提交后、验证码提交后、密码设置后等）
+        """
+        delay = random.uniform(min_seconds, max_seconds)
+        self.log(f"🕐 反检测延迟: {delay:.1f}秒 (模拟人类行为)")
+        time.sleep(delay)
 
     def _randomize_name(self, base_name: str) -> str:
         base = (base_name or "Kiro User").strip()
@@ -222,6 +232,13 @@ class KiroRegister:
         }
 
     def _init_browser(self):
+        """
+        初始化浏览器 - 每次调用都创建全新的浏览器上下文
+        关键改进：
+        1. 每个注册任务使用独立的浏览器上下文（避免会话污染）
+        2. 随机化浏览器指纹（User-Agent、Viewport、Locale、Timezone）
+        3. 独立的 cookies 和 localStorage（防止账号关联）
+        """
         self.pw = sync_playwright().start()
         launch_opts = {
             "headless": self.headless,
@@ -243,7 +260,7 @@ class KiroRegister:
         viewport = dict(profile["viewport"])
 
         self.log(
-            f"浏览器画像: {profile['name']} / {locale} / {timezone_id} / "
+            f"🎭 浏览器画像: {profile['name']} / {locale} / {timezone_id} / "
             f"{viewport['width']}x{viewport['height']}"
         )
         
@@ -255,6 +272,9 @@ class KiroRegister:
             "viewport": viewport,
             "color_scheme": random.choice(["light", "dark"]),
             "reduced_motion": random.choice(["reduce", "no-preference"]),
+            # 关键：每次创建全新的上下文，不共享任何状态
+            "ignore_https_errors": False,
+            "java_script_enabled": True,
         }
         
         # 关键修复：如果使用了代理，添加 localhost 绕过规则
@@ -264,10 +284,13 @@ class KiroRegister:
                 "server": self.proxy_url,
                 "bypass": "127.0.0.1,localhost"  # 绕过 localhost
             }
-            self.log(f"代理配置: {self.proxy_url} (绕过 localhost)")
+            self.log(f"🔌 代理配置: {self.proxy_url} (绕过 localhost)")
         
+        # 创建全新的浏览器上下文（隔离会话）
         self.context = self.browser.new_context(**context_options)
         self.context.set_extra_http_headers({"Accept-Language": f"{locale},en;q=0.9"})
+        
+        self.log("✅ 已创建全新浏览器上下文（独立会话，避免指纹关联）")
 
         # 拦截 Kiro 登录成功相关的请求/响应，提取 Token
         self.context.on("request", self._on_request)
@@ -1061,7 +1084,10 @@ class KiroRegister:
                 email,
             )
             self._click_primary_button(page)
-            self._human_sleep(1.1, 2.4)
+            
+            # 关键改进：邮箱提交后添加 8-20 秒随机延迟，模拟人类行为
+            self._anti_detection_delay(8.0, 20.0)
+            
             self._solve_captcha_if_exists(page)
 
             # 2. 等待邮箱后的实际下一步（某些 AWS 页面会延迟很久才出现姓名输入框）
@@ -1102,7 +1128,9 @@ class KiroRegister:
             self.log(f"获取到验证码: {otp_code}，正在填入...")
             self._type_like_human(page, otp_input, otp_code)
             self._click_primary_button(page)
-            self._human_sleep(1.0, 2.2)
+            
+            # 关键改进：验证码提交后添加 8-20 秒随机延迟，模拟人类行为
+            self._anti_detection_delay(8.0, 20.0)
 
             # 4. 设定与确认密码
             self.log("4. 设定与确认密码...")
@@ -1115,7 +1143,10 @@ class KiroRegister:
             self._fill_password_fields(page, pwd)
 
             self._click_primary_button(page)
-            self._human_sleep(1.3, 2.8)
+            
+            # 关键改进：密码设置后添加 8-20 秒随机延迟，模拟人类行为
+            self._anti_detection_delay(8.0, 20.0)
+            
             self._solve_captcha_if_exists(page)
 
             password_error = self._get_first_visible_text(

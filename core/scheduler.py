@@ -22,7 +22,7 @@ class Scheduler:
         self._load_tasks_from_db()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
-        print(f"[Scheduler] 已启动，已加载 {len(_scheduled_register_tasks)} 个任务")
+        print(f"[Scheduler] started, {len(_scheduled_register_tasks)} tasks loaded")
     
     def _load_tasks_from_db(self):
         """从数据库加载定时任务"""
@@ -44,7 +44,6 @@ class Scheduler:
                         'paused': task.paused,
                     }
                     _scheduled_register_tasks[task.task_id] = config
-                    print(f"[Scheduler] 加载任务 {task.task_id}")
         except Exception as e:
             print(f"[Scheduler] 加载任务失败：{e}")
 
@@ -52,8 +51,7 @@ class Scheduler:
         self._running = False
 
     def _loop(self):
-        # 启动后先等待 5 秒，让任务有时间加载
-        print("[Scheduler] 等待 5 秒后开始检查任务...")
+        # Wait 5s for tasks to load before starting checks
         time.sleep(5)
         while self._running:
             try:
@@ -61,7 +59,7 @@ class Scheduler:
                 self.check_and_run_scheduled_tasks()
                 self.cleanup_zombie_processes()  # 自动巡检僵尸进程
             except Exception as e:
-                print(f"[Scheduler] 错误：{e}")
+                print(f"[Scheduler] error: {e}")
             # 每分钟检查一次
             time.sleep(60)
 
@@ -93,7 +91,7 @@ class Scheduler:
                     pass
                     
             if killed_count > 0:
-                print(f"[Daemon 自愈] 清理了 {killed_count} 个超时的僵尸浏览器进程")
+                print(f"[Daemon] cleaned {killed_count} zombie browser processes")
                 
             # 清理 /tmp 下 Playwright 残留的无用临时目录 (超过 1 小时)
             tmp_dir = "/tmp" if os.name != 'nt' else os.environ.get('TEMP')
@@ -108,7 +106,7 @@ class Scheduler:
                                 shutil.rmtree(path, ignore_errors=True)
                                 cleaned_dirs += 1
                 if cleaned_dirs > 0:
-                    print(f"[Daemon 自愈] 清理了 {cleaned_dirs} 个 Playwright 残留 tmpfs 目录")
+                    print(f"[Daemon] cleaned {cleaned_dirs} Playwright leftover tmpfs dirs")
                     
         except ImportError:
             pass  # 如果没安装 psutil 则跳过
@@ -131,7 +129,7 @@ class Scheduler:
                     updated += 1
             s.commit()
             if updated:
-                print(f"[Scheduler] {updated} 个 trial 账号已到期")
+                print(f"[Scheduler] {updated} trial accounts expired")
 
     def check_and_run_scheduled_tasks(self):
         """检查并执行到期的定时任务"""
@@ -179,7 +177,7 @@ class Scheduler:
                     should_run = True
             
             if should_run:
-                print(f"[Scheduler] 执行定时任务 {task_id}")
+                print(f"[Scheduler] executing task {task_id}")
                 run_task_id = f"scheduled_{task_id}_{int(time.time())}"
                 def run_task():
                     error_msg = None
@@ -195,10 +193,10 @@ class Scheduler:
                         success = task_state.get("status") == "done" and not task_state.get("errors")
                         if not success:
                             error_msg = task_state.get("error") or "; ".join(task_state.get("errors") or [])
-                        print(f"[Scheduler] 任务 {task_id} 执行完成")
+                        print(f"[Scheduler] task {task_id} done")
                     except Exception as e:
                         error_msg = str(e)
-                        print(f"[Scheduler] 任务 {task_id} 执行失败：{e}")
+                        print(f"[Scheduler] task {task_id} failed: {e}")
                     finally:
                         # 更新运行状态
                         from core.scheduler import update_task_run_status

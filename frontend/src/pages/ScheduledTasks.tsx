@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Card, Table, Button, Tag, Modal, Form, InputNumber, Select, message, Alert, Radio, Space } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons'
+import { Card, Table, Button, Tag, Modal, Form, InputNumber, Select, message, Alert, Radio, Space, Dropdown } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PauseCircleOutlined, MoreOutlined } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
+import { PageHeader, PageSection } from '@/components/ui'
 
 export default function ScheduledTasks() {
   const [tasks, setTasks] = useState<any[]>([])
@@ -16,7 +17,7 @@ export default function ScheduledTasks() {
       const data = await apiFetch('/tasks/schedule')
       setTasks(data.tasks || [])
     } catch (e: any) {
-      message.error('加载失败：' + e.message)
+      message.error('加载失败: ' + e.message)
     } finally {
       setLoading(false)
     }
@@ -60,7 +61,7 @@ export default function ScheduledTasks() {
       form.resetFields()
       loadTasks()
     } catch (e: any) {
-      message.error('操作失败：' + e.message)
+      message.error('操作失败: ' + e.message)
     }
   }
 
@@ -84,7 +85,7 @@ export default function ScheduledTasks() {
       message.success('删除成功')
       loadTasks()
     } catch (e: any) {
-      message.error('删除失败：' + e.message)
+      message.error('删除失败: ' + e.message)
     }
   }
 
@@ -94,7 +95,7 @@ export default function ScheduledTasks() {
       message.success('任务已启动')
       loadTasks()
     } catch (e: any) {
-      message.error('启动失败：' + e.message)
+      message.error('启动失败: ' + e.message)
     }
   }
 
@@ -104,7 +105,7 @@ export default function ScheduledTasks() {
       message.success('状态已更新')
       loadTasks()
     } catch (e: any) {
-      message.error('操作失败：' + e.message)
+      message.error('操作失败: ' + e.message)
     }
   }
 
@@ -113,49 +114,45 @@ export default function ScheduledTasks() {
       title: '任务 ID',
       dataIndex: 'task_id',
       key: 'task_id',
-      width: 120,
+      width: 130,
     },
     {
       title: '平台',
       dataIndex: 'platform',
       key: 'platform',
-      width: 100,
-      render: (text: string) => <Tag>{text}</Tag>,
+      width: 110,
+      render: (text: string) => <Tag color="blue">{text}</Tag>,
     },
     {
       title: '数量',
       dataIndex: 'count',
       key: 'count',
-      width: 60,
+      width: 80,
     },
     {
       title: '间隔',
       key: 'interval',
-      width: 120,
+      width: 130,
       render: (_: any, record: any) => {
         const type = record.interval_type === 'minutes' ? '分钟' : '小时'
         const value = record.interval_value || 0
-        return <Tag color="blue">每 {value} {type}</Tag>
+        return <Tag color="cyan">每 {value} {type}</Tag>
       },
     },
     {
       title: '状态',
       key: 'status',
-      width: 100,
+      width: 110,
       render: (_: any, record: any) => {
         if (record.paused) return <Tag color="warning">已暂停</Tag>
         if (!record.last_run_at) return <Tag>等待中</Tag>
-        return record.last_run_success ? (
-          <Tag color="success">成功</Tag>
-        ) : (
-          <Tag color="error">失败</Tag>
-        )
+        return record.last_run_success ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>
       },
     },
     {
       title: '上次运行',
       key: 'last_run',
-      width: 180,
+      width: 190,
       render: (_: any, record: any) => {
         if (!record.last_run_at) return '-'
         const date = new Date(record.last_run_at)
@@ -171,23 +168,13 @@ export default function ScheduledTasks() {
     {
       title: '操作',
       key: 'action',
-      width: 200,
-      render: (_: any, record: any) => (
+      width: 132,
+      _legacyRender: (_: any, record: any) => (
         <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<PlayCircleOutlined />}
-            onClick={() => handleRun(record)}
-          >
+          <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => handleRun(record)}>
             运行
           </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
           <Button
@@ -198,55 +185,77 @@ export default function ScheduledTasks() {
           >
             {record.paused ? '恢复' : '暂停'}
           </Button>
-          <Button
-            type="link"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => handleDelete(record.task_id)}
-          >
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.task_id)}>
             删除
           </Button>
+        </Space>
+      ),
+      render: (_: any, record: any) => (
+        <Space size={6} className="scheduled-row-actions">
+          <Button type="primary" size="small" icon={<PlayCircleOutlined />} onClick={() => handleRun(record)}>
+            运行
+          </Button>
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: 'edit', label: '编辑', icon: <EditOutlined /> },
+                {
+                  key: 'toggle',
+                  label: record.paused ? '恢复' : '暂停',
+                  icon: record.paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />,
+                },
+                { type: 'divider' },
+                { key: 'delete', label: '删除', danger: true, icon: <DeleteOutlined /> },
+              ],
+              onClick: ({ key }) => {
+                if (key === 'edit') handleEdit(record)
+                if (key === 'toggle') handlePause(record)
+                if (key === 'delete') handleDelete(record.task_id)
+              },
+            }}
+          >
+            <Button size="small" icon={<MoreOutlined />} />
+          </Dropdown>
         </Space>
       ),
     },
   ]
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 24 }}>定时任务</h1>
-          <p style={{ color: '#999', marginTop: 8 }}>自动执行注册任务</p>
-        </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => {
-            setEditingTask(null)
-            form.resetFields()
-            setModalOpen(true)
-          }}
-        >
-          创建任务
-        </Button>
-      </div>
+    <div className="page-container">
+      <PageHeader
+        eyebrow="Scheduler"
+        title="定时任务"
+        subtitle="定期执行批量注册任务，适合做补量、轮询和自动化维护。"
+        actions={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setEditingTask(null)
+              form.resetFields()
+              setModalOpen(true)
+            }}
+          >
+            创建任务
+          </Button>
+        }
+      />
 
-      <Card>
+      <PageSection>
         <Alert
-          message="系统每分钟检查一次定时任务，到达设定时间后自动执行"
+          message="系统每 30 秒刷新一次任务状态，后台会按设定间隔自动调度。"
           type="info"
           showIcon
-          style={{ marginBottom: 16 }}
         />
-        <Table
-          columns={columns}
-          dataSource={tasks}
-          rowKey="task_id"
-          loading={loading}
-          pagination={false}
-        />
-      </Card>
+      </PageSection>
+
+      <PageSection>
+        <Card bordered={false} className="data-table-card" title="任务列表">
+          <Table columns={columns} dataSource={tasks} rowKey="task_id" loading={loading} pagination={false} scroll={{ x: 920 }} />
+        </Card>
+      </PageSection>
 
       <Modal
         title={editingTask ? '编辑任务' : '创建任务'}
@@ -257,7 +266,7 @@ export default function ScheduledTasks() {
           setEditingTask(null)
           form.resetFields()
         }}
-        width={500}
+        width={520}
       >
         <Form
           form={form}
@@ -272,11 +281,7 @@ export default function ScheduledTasks() {
             interval_type: 'minutes',
           }}
         >
-          <Form.Item
-            name="platform"
-            label="平台"
-            rules={[{ required: true }]}
-          >
+          <Form.Item name="platform" label="平台" rules={[{ required: true }]}>
             <Select
               options={[
                 { value: 'chatgpt', label: 'ChatGPT' },
@@ -286,27 +291,15 @@ export default function ScheduledTasks() {
             />
           </Form.Item>
 
-          <Form.Item
-            name="count"
-            label="每次数量"
-            rules={[{ required: true }]}
-          >
+          <Form.Item name="count" label="每次数量" rules={[{ required: true }]}>
             <InputNumber min={1} max={1000} style={{ width: '100%' }} />
           </Form.Item>
 
-          <Form.Item
-            name="interval_value"
-            label="间隔时间"
-            rules={[{ required: true }]}
-          >
+          <Form.Item name="interval_value" label="间隔时间" rules={[{ required: true }]}>
             <InputNumber min={1} style={{ width: '100%' }} />
           </Form.Item>
 
-          <Form.Item
-            name="interval_type"
-            label="时间单位"
-            rules={[{ required: true }]}
-          >
+          <Form.Item name="interval_type" label="时间单位" rules={[{ required: true }]}>
             <Radio.Group>
               <Radio value="minutes">分钟</Radio>
               <Radio value="hours">小时</Radio>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Card, Table, Button, Input, Tag, Space, Popconfirm, message } from 'antd'
+import { Card, Table, Button, Input, Tag, Space, Popconfirm, message, Typography } from 'antd'
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -10,6 +10,9 @@ import {
   SwapLeftOutlined,
 } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
+import { PageHeader, PageSection } from '@/components/ui'
+
+const { Text } = Typography
 
 export default function Proxies() {
   const [proxies, setProxies] = useState<any[]>([])
@@ -34,7 +37,11 @@ export default function Proxies() {
 
   const add = async () => {
     if (!newProxy.trim()) return
-    const lines = newProxy.trim().split('\n').map((l) => l.trim()).filter(Boolean)
+    const lines = newProxy
+      .trim()
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
     try {
       if (lines.length > 1) {
         await apiFetch('/proxies/bulk', {
@@ -57,23 +64,34 @@ export default function Proxies() {
   }
 
   const del = async (id: number) => {
-    await apiFetch(`/proxies/${id}`, { method: 'DELETE' })
-    message.success('删除成功')
-    load()
+    try {
+      await apiFetch(`/proxies/${id}`, { method: 'DELETE' })
+      message.success('删除成功')
+      load()
+    } catch (e: any) {
+      message.error(`删除失败: ${e.message || e}`)
+    }
   }
 
   const toggle = async (id: number) => {
-    await apiFetch(`/proxies/${id}/toggle`, { method: 'PATCH' })
-    load()
+    try {
+      await apiFetch(`/proxies/${id}/toggle`, { method: 'PATCH' })
+      load()
+    } catch (e: any) {
+      message.error(`操作失败: ${e.message || e}`)
+    }
   }
 
   const check = async () => {
     setChecking(true)
-    await apiFetch('/proxies/check', { method: 'POST' })
-    setTimeout(() => {
-      load()
+    try {
+      await apiFetch('/proxies/check', { method: 'POST' })
+      await load()
+    } catch (e: any) {
+      message.error(`检测失败: ${e.message || e}`)
+    } finally {
       setChecking(false)
-    }, 3000)
+    }
   }
 
   const columns: any[] = [
@@ -81,17 +99,19 @@ export default function Proxies() {
       title: '代理地址',
       dataIndex: 'url',
       key: 'url',
-      render: (text: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{text}</span>,
+      render: (text: string) => <span className="mono-text">{text}</span>,
     },
     {
       title: '地区',
       dataIndex: 'region',
       key: 'region',
+      width: 120,
       render: (text: string) => text || '-',
     },
     {
-      title: '成功/失败',
+      title: '成功 / 失败',
       key: 'stats',
+      width: 140,
       render: (_: any, record: any) => (
         <Space>
           <Tag color="success">{record.success_count}</Tag>
@@ -104,6 +124,7 @@ export default function Proxies() {
       title: '状态',
       dataIndex: 'is_active',
       key: 'is_active',
+      width: 120,
       render: (active: boolean) => (
         <Tag color={active ? 'success' : 'error'} icon={active ? <CheckCircleOutlined /> : <CloseCircleOutlined />}>
           {active ? '活跃' : '禁用'}
@@ -113,6 +134,7 @@ export default function Proxies() {
     {
       title: '操作',
       key: 'action',
+      width: 120,
       render: (_: any, record: any) => (
         <Space>
           <Button
@@ -130,49 +152,49 @@ export default function Proxies() {
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>代理管理</h1>
-          <p style={{ color: '#7a8ba3', marginTop: 4 }}>共 {proxies.length} 个代理</p>
-        </div>
-        <Button icon={<ReloadOutlined spin={checking} />} onClick={check} loading={checking}>
-          检测全部
-        </Button>
-      </div>
+    <div className="page-container">
+      <PageHeader
+        eyebrow="Network"
+        title="代理管理"
+        subtitle="集中维护注册代理、区域标签和可用性状态。"
+        actions={
+          <Button icon={<ReloadOutlined spin={checking} />} onClick={check} loading={checking}>
+            检测全部代理
+          </Button>
+        }
+      />
 
-      <Card title="添加代理（每行一个）">
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Input.TextArea
-            value={newProxy}
-            onChange={(e) => setNewProxy(e.target.value)}
-            placeholder="http://user:pass@host:port"
-            rows={3}
-            style={{ fontFamily: 'monospace' }}
-          />
-          <Space>
-            <Input
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              placeholder="地区标签 (如 US, SG)"
-              style={{ width: 200 }}
+      <PageSection>
+        <Card bordered={false} title="添加代理">
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Text className="surface-note">支持单条添加和多行批量导入，每行一个代理地址。</Text>
+            <Input.TextArea
+              value={newProxy}
+              onChange={(e) => setNewProxy(e.target.value)}
+              placeholder="http://user:pass@host:port"
+              rows={4}
+              style={{ fontFamily: 'var(--font-mono)' }}
             />
-            <Button type="primary" icon={<PlusOutlined />} onClick={add}>
-              添加
-            </Button>
+            <Space wrap>
+              <Input
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                placeholder="地区标签，如 US / SG"
+                style={{ width: 220 }}
+              />
+              <Button type="primary" icon={<PlusOutlined />} onClick={add}>
+                添加代理
+              </Button>
+            </Space>
           </Space>
-        </Space>
-      </Card>
+        </Card>
+      </PageSection>
 
-      <Card>
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={proxies}
-          loading={loading}
-          pagination={false}
-        />
-      </Card>
+      <PageSection>
+        <Card bordered={false} className="data-table-card" title="代理列表" extra={<Tag color="blue">{proxies.length} Items</Tag>}>
+          <Table rowKey="id" columns={columns} dataSource={proxies} loading={loading} pagination={false} />
+        </Card>
+      </PageSection>
     </div>
   )
 }
