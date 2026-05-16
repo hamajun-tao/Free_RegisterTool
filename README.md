@@ -10,23 +10,46 @@
 
 <p align="center">
   <strong>A self-hosted account registration and operations workspace</strong><br />
-  FastAPI backend, React admin UI, plugin-based platform integrations, mailbox adapters, proxy management, task scheduling, and external sync support.
+  FastAPI backend, React admin UI, plugin-based platform integrations, mailbox adapters, proxy management, scheduling, and external sync support.
 </p>
 
 <p align="center">
-  <a href="README_CN.md">中文文档</a>
+  <a href="README_CN.md">Simplified Chinese</a>
 </p>
 
 ---
 
+## Contents
+
+- [Overview](#overview)
+- [Screenshots](#screenshots)
+- [Highlights](#highlights)
+- [Tech Stack](#tech-stack)
+- [Quick Start](#quick-start)
+- [Typical Workflow](#typical-workflow)
+- [Configuration Notes](#configuration-notes)
+- [Testing](#testing)
+- [Privacy And Safe Publishing](#privacy-and-safe-publishing)
+- [Docker](#docker)
+- [Development Notes](#development-notes)
+- [License](#license)
+
 ## Overview
 
-Free Register Tool is designed for local deployment, controlled automation, development, and research workflows.  
-It combines a backend API, a responsive admin interface, and platform-specific plugins so you can manage registration tasks, accounts, logs, mailboxes, proxies, and external sync workflows in one place.
+Free Register Tool is built for local deployment, controlled automation, development, and research workflows.
+It combines a backend API, a responsive admin interface, and platform-specific plugins so you can manage:
+
+- accounts
+- registration tasks
+- mailboxes
+- proxies
+- logs
+- scheduled jobs
+- external sync workflows
 
 Use it only in ways that comply with platform terms, local law, and your own risk controls.
 
-## Preview
+## Screenshots
 
 ### Dashboard
 
@@ -36,24 +59,16 @@ Use it only in ways that comply with platform terms, local law, and your own ris
 
 ![Settings Overview](docs/images/settings-overview.png)
 
-## Key Features
+## Highlights
 
-- ◆ Multi-platform workflow architecture under `platforms/`
-- ◆ Responsive web UI for accounts, tasks, settings, logs, and proxy management
-- ◆ Batch registration tasks with live progress and resumable task state
-- ◆ Mailbox provider abstraction for temporary mail and self-hosted mailbox flows
-- ◆ Captcha and browser automation support for supported registration flows
-- ◆ ChatGPT-oriented token management, local probing, payment-link retrieval, and Sub2API sync
-- ◆ Scheduled execution for recurring registration jobs
-- ◆ External integration support for tools such as Sub2API and related sync flows
-
-## Recent UX Updates
-
-- ◆ Brighter and denser management interface with cleaner spacing
-- ◆ Improved accounts page layout with compact actions and a detail drawer
-- ◆ Better ChatGPT settings grouping and configuration overview
-- ◆ Cleaner task history and scheduler interactions
-- ◆ Reduced topbar clutter and safer publishing defaults
+- Plugin-based multi-platform workflow architecture under `platforms/`
+- Responsive admin UI for accounts, tasks, settings, logs, and proxies
+- Batch registration with progress tracking and resumable task state
+- Mailbox provider abstraction for temporary mail and self-hosted mail flows
+- Captcha and browser automation support for supported registration pipelines
+- ChatGPT-oriented token management, local probing, payment-link retrieval, and Sub2API sync
+- Scheduled execution for recurring jobs
+- Safer repository defaults for local secrets, logs, and debug artifacts
 
 ## Tech Stack
 
@@ -64,21 +79,6 @@ Use it only in ways that comply with platform terms, local law, and your own ris
 | Automation | Playwright, Camoufox |
 | Networking | `curl_cffi`, `httpx` |
 | Storage | SQLite |
-
-## Repository Layout
-
-```text
-api/          HTTP API routes
-core/         Shared runtime, registry, scheduler, database helpers
-frontend/     React frontend
-platforms/    Platform plugins and platform-specific logic
-services/     Background services and integration helpers
-scripts/      Project utility scripts
-tests/        Automated tests
-tools/        Operational helper tools
-docker/       Container entrypoint assets
-main.py       Backend entrypoint
-```
 
 ## Quick Start
 
@@ -149,7 +149,7 @@ Default API docs:
 http://localhost:8000/docs
 ```
 
-## Frontend Development
+### Frontend development
 
 ```bash
 cd frontend
@@ -163,25 +163,13 @@ Default dev URL:
 http://localhost:5173
 ```
 
-## Main Screens
+## Typical Workflow
 
-- `Dashboard`  
-  Account totals, platform distribution, and quick health overview.
-
-- `Accounts`  
-  Account list, detail drawer, batch actions, status sync, upload actions, and payment-link handling.
-
-- `Register Task`  
-  Batch registration launch flow with live progress and task logs.
-
-- `Scheduled Tasks`  
-  Recurring registration jobs with simple operations and execution control.
-
-- `Task History`  
-  Searchable registration logs and cleanup actions.
-
-- `Settings`  
-  Mailbox, captcha, proxy, integration, and platform-specific configuration.
+1. Configure mailbox, captcha, proxy, and external sync settings in `Settings`.
+2. Launch batch registration from `Register Task`.
+3. Review generated accounts in `Accounts`.
+4. Run local probe or remote sync actions when needed.
+5. Use `Task History` and `Scheduled Tasks` for long-running maintenance flows.
 
 ## Configuration Notes
 
@@ -189,12 +177,12 @@ The project reads configuration from `.env` plus persisted runtime settings stor
 
 Common categories:
 
-- Server host and port
-- Captcha solver settings
-- Proxy settings
-- Mailbox provider credentials
-- External sync endpoints such as Sub2API
-- Platform-specific runtime options
+- server host and port
+- captcha solver settings
+- proxy settings
+- mailbox provider credentials
+- external sync endpoints such as Sub2API
+- platform-specific runtime options
 
 Start from [`.env.example`](./.env.example).
 
@@ -251,8 +239,3 @@ docker-compose down
 ## License
 
 MIT. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
-
-## Acknowledgement
-
-This repository builds on earlier upstream and forked work in the same ecosystem.  
-See project history and notices in the repository for attribution details.
